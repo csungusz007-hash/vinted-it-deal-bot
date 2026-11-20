@@ -11,3 +11,9 @@ android/build/
 android/app/build/
 android/app/src/main/assets/
 android/app/src/main/res/mipmap-*/
+figyelolista.json
+arnaplo.json
+*.json.tmp
+build/
+dist/
+*.spec

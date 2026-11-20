@@ -28,20 +28,19 @@ jobs:
           python make_icon.py
 
       - name: App fordítása
-        run: pyinstaller --onefile --windowed --name VintedFigyelo --icon app.ico --add-data "app_ui.html;." --collect-all webview app.py
+        run: pyinstaller --onedir --windowed --noconfirm --name VintedFigyelo --icon app.ico --add-data "app_ui.html;." --collect-all webview app.py
 
       - name: Önteszt a kész .exe-vel
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath dist/VintedFigyelo.exe -ArgumentList "--selftest" -Wait -PassThru
+          $p = Start-Process -FilePath dist/VintedFigyelo/VintedFigyelo.exe -ArgumentList "--selftest" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Az önteszt elbukott (kilépési kód: $($p.ExitCode))" }
 
       - name: ZIP összeállítása
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force VintedFigyelo | Out-Null
-          Copy-Item dist/VintedFigyelo.exe, config.json, README.md VintedFigyelo/
-          Compress-Archive -Path VintedFigyelo/* -DestinationPath VintedFigyelo-windows.zip -Force
+          Copy-Item config.json, README.md dist/VintedFigyelo/
+          Compress-Archive -Path dist/VintedFigyelo -DestinationPath VintedFigyelo-windows.zip -Force
 
       - name: Feltöltés a "latest" kiadásba
         shell: pwsh

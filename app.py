@@ -25,11 +25,44 @@ import vinted_bot as core
 
 APP_NAME = "Vinted IT-figyelő"
 DEALS_PATH = os.path.join(core.BASE, "akciok.json")
+WATCH_PATH = os.path.join(core.BASE, "figyelolista.json")
+HISTORY_PATH = os.path.join(core.BASE, "arnaplo.json")
+WATCH_EVERY_SEC = 10 * 60
 MAX_DEALS = 400
 MAX_FEED = 150
 
 DEFAULT_WARN_WORDS = ["doboz", "box", "pudełko", "cutie", "cutia", "fotó", "foto",
                       "zdjęcie", "photo", "imagine", "replika", "replica", "copy"]
+
+
+def _load_json(path, default):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def _save_json(path, data):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def translate_hu(texts):
+    """Címek magyarra a Google Fordító ingyenes végpontjával (soronként egy cím, egy kérésben).
+    shortcut: nem hivatalos végpont, ha megszűnik, a címek eredeti nyelven maradnak."""
+    q = "\n".join(t.replace("\n", " ") for t in texts)
+    url = "https://translate.googleapis.com/translate_a/single?" + core.urllib.parse.urlencode(
+        {"client": "gtx", "sl": "auto", "tl": "hu", "dt": "t", "q": q})
+    req = core.urllib.request.Request(url, headers={"User-Agent": core.UA})
+    with core.urllib.request.urlopen(req, timeout=15) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    out = "".join(seg[0] for seg in data[0] if seg and seg[0]).split("\n")
+    if len(out) != len(texts):  # a sortörés elcsúszott: egyesével
+        return texts if len(texts) == 1 else [translate_hu([t])[0] for t in texts]
+    return [o.strip() for o in out]
 
 
 def ui_path():
@@ -59,6 +92,22 @@ def condition_rank(status):
     return 3
 
 
+# Vinted állapotfeliratok magyarra (PL/RO/EN). A sorrend számít: a hosszabb előbb.
+STATUS_HU = [
+    (["címkével", "z metką", "cu etichet", "with tags"], "Új, címkével"),
+    (["címke nélkül", "bez metki", "fără etichet", "fara etichet", "without tags"], "Új, címke nélkül"),
+    (["bardzo dobry", "foarte bun", "very good"], "Nagyon jó"),
+    (["zadowalający", "satisf"], "Megfelelő"),
+    (["dobry", "bun", "good"], "Jó"),
+    (["nowy", "nou", "new"], "Új"),
+]
+
+
+def status_hu(status):
+    s = (status or "").lower()
+    return next((hu for words, hu in STATUS_HU if any(w in s for w in words)), status)
+
+
 def rating_for(ratio, target_hit=False):
     if ratio is None:
         return ("target", "Célár alatt") if target_hit else ("new", "Új minta")
@@ -79,6 +128,8 @@ def notification_text(rec):
         parts.append(rec["status"])
     if rec.get("ratio") is not None and rec["ratio"] < 1:
         parts.append(f"−{round((1 - rec['ratio']) * 100)}%")
+    if rec.get("drop_from"):
+        parts.insert(0, "Árcsökkenés")
     if rec.get("target_huf"):
         ref = f"Célár: {core.fmt_num(rec['target_huf'])} Ft, díjjal {core.fmt_num(rec['total_huf'])} Ft"
     elif rec.get("median_huf"):
@@ -120,8 +171,13 @@ class Engine:
         self.lock = threading.RLock()
         self.cfg = self._load_config()
         self.rates = {"HUF": 1.0, **{k.upper(): float(v) for k, v in self.cfg.get("to_huf", {}).items()}}
+        self.rates_info = {"live": False, "date": None, "time": None}
         self.state = core.State(core.STATE_PATH)
         self.deals = self._load_deals()
+        self.watch = _load_json(WATCH_PATH, [])
+        self.history = _load_json(HISTORY_PATH, {})
+        self.last_total = {}  # hirdetés id -> utoljára látott teljes ár (Ft), az árcsökkenéshez
+        self.tr_cache = {}
         self.feed = deque(maxlen=MAX_FEED)
         self.status = {c: {"state": "stopped", "msg": "", "last_ok": None, "round_sec": None}
                        for c in core.DOMAINS}
@@ -142,6 +198,7 @@ class Engine:
         app_cfg.setdefault("sound", True)
         app_cfg.setdefault("notify_mode", "best")   # "best": csak a keresés legolcsóbb akciójáról
         app_cfg.setdefault("min_condition", 3)      # 3 = "Jó" vagy jobb
+        app_cfg.setdefault("translate_titles", True)
         app_cfg.pop("only_great", None)
         for s in cfg.get("searches", []):
             s.setdefault("enabled", True)
@@ -158,7 +215,10 @@ class Engine:
     def _load_deals(self):
         try:
             with open(DEALS_PATH, encoding="utf-8") as f:
-                return json.load(f)[:MAX_DEALS]
+                deals = json.load(f)[:MAX_DEALS]
+            for d in deals:
+                d["status"] = status_hu(d.get("status"))
+            return deals
         except Exception:
             return []
 
@@ -179,7 +239,8 @@ class Engine:
         if self.running:
             return
         self.stop_event = threading.Event()
-        threading.Thread(target=self._refresh_rates, daemon=True).start()
+        for loop in (self._hourly_loop, self._watch_loop, self._translate_loop):
+            threading.Thread(target=loop, args=(self.stop_event,), daemon=True).start()
         countries = [c for c in self.cfg.get("countries", ["hu", "pl", "ro"]) if c in core.DOMAINS]
         self.stats["started"] = time.time()
         self.threads = []
@@ -196,13 +257,19 @@ class Engine:
             self.status[c]["msg"] = ""
         threading.Thread(target=self.state.save, daemon=True).start()
 
-    def _refresh_rates(self):
+    def refresh_rates(self):
         try:
             r = core.load_rates(self.cfg)
             with self.lock:
-                self.rates.update(r)
+                # sikertelen lekérésnél ne írjuk felül a korábbi élő árfolyamot a mentettel
+                if core.RATES_INFO["live"] or not self.rates_info.get("live"):
+                    self.rates.update(r)
+                    self.rates_info = dict(core.RATES_INFO)
+                else:
+                    self.rates_info["error_time"] = time.time()
         except Exception:
             pass
+        return self.rates_info
 
     # -- figyelés
     def _worker(self, country, stop):
@@ -212,6 +279,7 @@ class Engine:
                 if client is None:
                     self.status[country].update(state="starting", msg="Kapcsolódás…")
                     client = core.VintedClient(country)
+                    client.on_wait = lambda sec, code, c=country: self._on_wait(c, sec, code)
                 t0 = time.time()
                 with self.lock:
                     searches = [s for s in self.cfg.get("searches", []) if s.get("enabled", True)]
@@ -223,7 +291,10 @@ class Engine:
                 for n, (search, q) in enumerate(jobs, 1):
                     if stop.is_set():
                         return
+                    t_req = time.time()
                     items = client.search(q)
+                    if st.get("state") == "wait":
+                        st.update(state="ok", msg="")
                     empty += 0 if items else 1
                     self._process(country, search, q, items)
                     self.stats["checked"] += 1
@@ -231,7 +302,8 @@ class Engine:
                     if first_round:
                         st.update(state="ok", progress=f"{n}/{len(jobs)}",
                                   msg=f"Első kör: {n}/{len(jobs)} keresés, {st['items']} hirdetés beolvasva")
-                    stop.wait(gap + random.uniform(0, 0.7))
+                    # a szünet a kérés indulásától számít, a letöltés/feldolgozás ideje beleszámít
+                    stop.wait(max(0.0, gap + random.uniform(0, 0.7) - (time.time() - t_req)))
                 if jobs and empty == len(jobs):
                     st.update(state="error", msg="A Vinted minden keresésre üres oldalt adott. "
                                                   "Lehet, hogy átalakították az oldalt, frissítés kellhet.")
@@ -255,6 +327,117 @@ class Engine:
                 client = None
                 stop.wait(20)
 
+    def _on_wait(self, country, sec, code):
+        self.stats["waits"] = self.stats.get("waits", 0) + 1
+        why = "Túl sok kérés (429)" if code == 429 else f"A Vinted elutasította a kérést ({code})"
+        self.status[country].update(state="wait", msg=f"{why}, {sec} mp szünet, utána folytatja")
+
+    # -- óránkénti feladatok: árfolyam + piaci ár napló
+    def _hourly_loop(self, stop):
+        while not stop.is_set():
+            self.refresh_rates()
+            self._log_medians()
+            stop.wait(3600)  # az ECB naponta egyszer frissít, óránként bőven elég
+
+    def _log_medians(self):
+        """Keresésenként feljegyzi a piaci árat (az összes ország mediánja), ebből lesz a grafikon."""
+        with self.lock:
+            min_hist = int(self.cfg.get("min_history", 15))
+            now = round(time.time())
+            for s in self.cfg.get("searches", []):
+                prices = [p for k, h in self.state.hist.items() if k.split("|")[1] == s["name"] for p in h]
+                if len(prices) >= min_hist:
+                    pts = self.history.setdefault(s["name"], [])
+                    pts.append([now, round(sorted(prices)[len(prices) // 2])])
+                    del pts[:-2000]  # ~3 hónap óránként
+            _save_json(HISTORY_PATH, self.history)
+
+    def price_history(self, name):
+        with self.lock:
+            pts = list(self.history.get(name, []))
+            deals = sorted((d for d in self.deals if d["search"] == name), key=lambda d: d["found"])
+            return {"points": pts, "deals": [[round(d["found"]), d["total_huf"]] for d in deals]}
+
+    # -- figyelőlista: eladva / eltűnt / árváltozás
+    def _watch_loop(self, stop):
+        while not stop.wait(WATCH_EVERY_SEC):
+            self.check_watch(stop)
+
+    def check_watch(self, stop):
+        with self.lock:
+            todo = [w for w in self.watch if not (w.get("gone") or w.get("sold"))]
+            gap = float(self.cfg.get("request_gap_sec", 1.5))
+        clients = {}
+        for w in todo:
+            if stop.is_set():
+                return
+            try:
+                c = clients.get(w["country"]) or clients.setdefault(w["country"], core.VintedClient(w["country"]))
+                r = c.item_status(w["url"])
+            except Exception:
+                clients.pop(w["country"], None)
+                continue
+            if r:
+                self._apply_watch(w, r)
+            stop.wait(gap + random.uniform(0, 0.7))
+
+    def _apply_watch(self, w, r):
+        toast = None
+        with self.lock:
+            w["checked"] = time.time()
+            if r["gone"] or r["closed"]:
+                w["sold"] = r["closed"]
+                w["gone"] = r["gone"]
+                toast = ("Eladták" if r["closed"] else "Eltűnt a hirdetés", w["title"])
+            else:
+                w["reserved"] = r["reserved"]
+                if r["price"] and r["price"] != w.get("now_price", w["price"]):
+                    prev = w.get("now_price", w["price"])
+                    w["now_price"] = r["price"]
+                    w["now_label"] = f"{core.fmt_num(r['price'])} {'Ft' if w['cur'] == 'HUF' else w['cur']}"
+                    if r["price"] < prev:
+                        toast = (f"Árcsökkenés: {w['now_label']}", w["title"])
+            self.seq += 1
+        self._save_watch()
+        if toast and self.cfg.get("app", {}).get("windows_notify", True):
+            windows_toast(*toast)
+
+    def _save_watch(self):
+        with self.lock:
+            data = list(self.watch)
+        _save_json(WATCH_PATH, data)
+
+    # -- címek fordítása magyarra
+    def _translate_loop(self, stop):
+        while not stop.wait(4):
+            if not self.cfg.get("app", {}).get("translate_titles", True):
+                continue
+            with self.lock:
+                recs = [d for d in list(self.deals) + list(self.feed) + self.watch
+                        if d["country"] != "hu" and "title_hu" not in d]
+            todo = list(dict.fromkeys(d["title"] for d in recs if d["title"] not in self.tr_cache))[:25]
+            if todo:
+                try:
+                    self.tr_cache.update(zip(todo, translate_hu(todo)))
+                except Exception:
+                    stop.wait(60)  # a fordító nem elérhető, később újra
+                    continue
+            changed = 0
+            with self.lock:
+                warn_words = [w.lower() for w in self.cfg.get("warn_words", [])]
+                for d in recs:
+                    if d["title"] in self.tr_cache:
+                        d["title_hu"] = self.tr_cache[d["title"]]
+                        changed += 1
+                        # pl. „Krabička” = „Doboz”: a figyelmeztető szavak a fordításban is számítanak
+                        hit = next((w for w in warn_words if w in d["title_hu"].lower()), None)
+                        if hit and not any(hit in x for x in d["warnings"]):
+                            d["warnings"].append(f"A címben szerepel: „{hit}”")
+                self.seq += 1 if changed else 0
+            if changed:
+                self._save_deals()
+                self._save_watch()
+
     def _process(self, country, search, q, items):
         key = f"{country}|{search['name']}|{q}"
         notify = []
@@ -269,23 +452,38 @@ class Engine:
             thr = float(search.get("deal_threshold", self.cfg.get("deal_threshold", 0.65)))
             min_cond = int(self.cfg.get("app", {}).get("min_condition", 3))
             mode = self.cfg.get("app", {}).get("notify_mode", "best")
+            if len(self.last_total) > 100000:
+                self.last_total.clear()  # shortcut: csak memóriában, újraindítás után újratanulja; fájlba, ha kevés lenne
             for raw in reversed(items):
                 it = core.normalize(raw, country)
+                total = self._landed_huf(it)[1]
+                old = self.last_total.get(it["id"])
+                if total:
+                    self.last_total[it["id"]] = total
+                drop_from = None
                 if it["id"] in seen_set:
-                    continue
-                seen.append(it["id"])
-                seen_set.add(it["id"])
+                    # Már látott hirdetés: csak akkor érdekes, ha legalább 5%-kal olcsóbb lett.
+                    if not (seeded and old and total and total <= old * 0.95):
+                        continue
+                    drop_from = old
+                else:
+                    seen.append(it["id"])
+                    seen_set.add(it["id"])
                 target = search.get("target_price_huf")
                 if not seeded and not target:
                     self._add_hist(it, search, hist)
                     continue
-                if seeded:
+                if seeded and not drop_from:
                     self.stats["new_items"] += 1
-                rec = self._score(it, search, hist, min_hist, warn_words)
+                rec = self._score(it, search, hist, min_hist, warn_words, add_hist=not drop_from)
                 if rec is None:
                     continue
+                if drop_from:
+                    rec["drop_from"] = round(drop_from)
+                    rec["warnings"].insert(0, f"Árcsökkenés: {core.fmt_num(drop_from)} Ft → {core.fmt_num(rec['total_huf'])} Ft")
                 if seeded:
                     self.feed.appendleft(rec)
+                    self.seq += 1
                 # Akció: célár alatt (ha van célár), különben a piaci (medián) ár alatt a küszöb szerint.
                 if target:
                     is_deal = rec["total_huf"] <= target
@@ -293,11 +491,13 @@ class Engine:
                     is_deal = rec["ratio"] is not None and rec["ratio"] <= thr
                 if not is_deal or it["seller"] in blocked or rec["cond_rank"] < min_cond:
                     continue
-                if not self.state.mark_alerted(it["id"]):
+                # árcsökkenésnél az új ár számít új jelzésnek, ugyanarra az árra nem szólunk kétszer
+                if not self.state.mark_alerted(f"{it['id']}@{rec['total_huf']}" if drop_from else it["id"]):
                     continue
                 best = self._best_total(search["name"])
                 rec["best"] = best is None or rec["total_huf"] < best
                 rec["first_round"] = not seeded
+                self.deals = [d for d in self.deals if d["id"] != it["id"]]
                 self.deals.insert(0, rec)
                 del self.deals[MAX_DEALS:]
                 self.seq += 1
@@ -335,14 +535,15 @@ class Engine:
             return
         hist.append(total)
 
-    def _score(self, it, search, hist, min_hist, warn_words):
+    def _score(self, it, search, hist, min_hist, warn_words, add_hist=True):
         price, total = self._landed_huf(it)
         if price is None or not core.text_ok(it["title"], search, self.cfg):
             return None
         if price < search.get("min_price_huf", 0):
             return None
         med = sorted(hist)[len(hist) // 2] if len(hist) >= min_hist else None
-        hist.append(total)
+        if add_hist:
+            hist.append(total)
         mx = search.get("max_price_huf")
         if mx and price > mx:
             return None
@@ -360,7 +561,7 @@ class Engine:
         price_label = f"{core.fmt_num(it['price'])} {'Ft' if cur == 'HUF' else cur}"
         return {
             "id": it["id"], "title": it["title"], "url": it["url"], "photo": it["photo"],
-            "brand": it["brand"], "status": it["status"], "seller": it["seller"],
+            "brand": it["brand"], "status": status_hu(it["status"]), "seller": it["seller"],
             "country": it["country"], "search": search["name"],
             "price": it["price"], "cur": cur, "price_label": price_label,
             "price_huf": round(price), "total_huf": round(total),
@@ -373,21 +574,25 @@ class Engine:
         }
 
     # -- UI-nak
-    def snapshot(self):
+    def snapshot(self, seq=None):
+        """A listákat csak akkor küldi, ha változtak (seq), így a másodpercenkénti
+        frissítés nem utaztat át minden alkalommal 400 akciót a felületre."""
         with self.lock:
-            counts = {}
-            for d in self.deals:
-                counts[d["search"]] = counts.get(d["search"], 0) + 1
-            return {
+            snap = {
                 "running": self.running,
                 "status": self.status,
-                "deals": self.deals,
-                "feed": list(self.feed),
-                "counts": counts,
                 "stats": self.stats,
                 "seq": self.seq,
                 "now": time.time(),
+                "rates": {k: round(v, 2) for k, v in self.rates.items() if k != "HUF"},
+                "rates_info": self.rates_info,
             }
+            if seq != self.seq:
+                # másolat: a fordító/figyelő szálak közben új mezőket írhatnak a rekordokba
+                snap["deals"] = [dict(d) for d in self.deals]
+                snap["feed"] = [dict(d) for d in self.feed]
+                snap["watch"] = [dict(d) for d in self.watch]
+            return snap
 
 
 # ---------------------------------------------------------------- JS API
@@ -395,8 +600,38 @@ class Api:
     def __init__(self, engine):
         self._e = engine
 
-    def snapshot(self):
-        return self._e.snapshot()
+    def snapshot(self, seq=None):
+        return self._e.snapshot(seq)
+
+    def refresh_rates(self):
+        self._e.refresh_rates()
+        return self._e.snapshot(self._e.seq)
+
+    def price_history(self, name):
+        return self._e.price_history(name)
+
+    def watch_add(self, item_id):
+        e = self._e
+        with e.lock:
+            d = next((x for x in list(e.deals) + list(e.feed) if x["id"] == item_id), None)
+            if not d or any(w["id"] == item_id for w in e.watch):
+                return False
+            e.watch.insert(0, {**d, "saved_at": time.time()})
+            e.seq += 1
+        e._save_watch()
+        return True
+
+    def watch_remove(self, item_id):
+        with self._e.lock:
+            self._e.watch = [w for w in self._e.watch if w["id"] != item_id]
+            self._e.seq += 1
+        self._e._save_watch()
+        return True
+
+    def watch_check(self):
+        """Azonnali ellenőrzés a felület gombjáról (háttérben)."""
+        threading.Thread(target=self._e.check_watch, args=(threading.Event(),), daemon=True).start()
+        return True
 
     def start(self):
         self._e.start()
@@ -426,6 +661,7 @@ class Api:
     def hide_deal(self, item_id):
         with self._e.lock:
             self._e.deals = [d for d in self._e.deals if d["id"] != item_id]
+            self._e.seq += 1
         self._e._save_deals()
         return True
 
@@ -440,12 +676,14 @@ class Api:
         self._e.save_config(cfg)
         with self._e.lock:
             self._e.deals = [d for d in self._e.deals if d.get("seller") != seller_id]
+            self._e.seq += 1
         self._e._save_deals()
         return True
 
     def clear_deals(self):
         with self._e.lock:
             self._e.deals = []
+            self._e.seq += 1
         self._e._save_deals()
         return True
 

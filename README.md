@@ -4,7 +4,7 @@ Windows-os asztali app, ami a vinted.hu, vinted.pl és vinted.ro oldalon figyeli
 
 ## Telepítés
 1. Nyisd meg a repó **Releases → Vinted IT-figyelő (Windows app)** kiadását, és töltsd le a `VintedFigyelo-windows.zip`-et.
-2. Csomagold ki egy mappába. Benne lesz a `VintedFigyelo.exe`, a `config.json` és ez a leírás.
+2. Csomagold ki egy mappába. Benne lesz a `VintedFigyelo.exe`, egy `_internal` mappa (az app futtatókörnyezete, ne töröld és ne vidd el az exe mellől), a `config.json` és ez a leírás.
 3. Indítsd el a `VintedFigyelo.exe`-t. Ha a Windows kék ablakkal figyelmeztet, kattints a **További információ → Futtatás mindenképp** gombra (a program nincs digitálisan aláírva).
 
 Python nem kell hozzá. A felületet a Windowsba épített Edge WebView2 rajzolja ki, ez Windows 10 és 11 alatt alapból megvan.
@@ -42,11 +42,15 @@ Az első kör a már fent lévő hirdetések közül is kigyűjti a célár alat
 - **Összes új hirdetés**: minden friss hirdetés a keresésekből, akkor is, ha nem akció. Ebből látod, hogy a figyelő dolgozik.
 - **Országok**: mindhárom országnál ott van, mikor frissült utoljára, és ha baj van, mi a hiba. A figyelő sosem áll le csendben.
 - **Keresések**: egy kapcsolóval ki-be kapcsolhatók, a `+` gombbal újat adhatsz hozzá, a szerkesztőben pedig országonkénti kulcsszót, ársávot és saját akció-küszöböt állíthatsz be.
-- A hirdetés `⋮` menüjében elrejtheted a hirdetést, vagy letilthatod az eladót.
+- A hirdetés `⋮` menüjében elrejtheted a hirdetést, letilthatod az eladót, vagy elmentheted.
+- **Mentett**: az elmentett hirdetéseket 10 percenként ellenőrzi. Jelzi, ha eladták, törölték, lefoglalták, vagy változott az ára, és árcsökkenésnél vagy eladásnál Windows-értesítést küld.
+- **Ártörténet**: a bal oldali listában egy keresés nevére kattintva grafikon mutatja a piaci ár (medián) óránkénti alakulását és a talált akciókat.
+- **Magyar címek**: a lengyel és román címeket magyarra fordítja, az eredeti cím az egérmutató alatt látszik. Az állapotfeliratok („Bardzo dobry”, „Foarte bun”…) is magyarul jelennek meg. A fordítás a Beállításokban kikapcsolható.
+- **Árcsökkenés**: ha egy már látott hirdetés legalább 5%-kal olcsóbb lesz, és így akcióvá válik, külön jelzést kapsz róla.
 
 ## Hogyan dönti el, mi az akció
 - Minden keresésnél gyűjti az árakat, és azok mediánjához hasonlít. Az első kör csak mintát gyűjt, akkor még nem jelez.
-- Az összehasonlítás a **Vinted-díjjal együtt** fizetendő teljes áron megy, forintra átváltva (az árfolyamot induláskor az EKB-tól kéri le).
+- Az összehasonlítás a **Vinted-díjjal együtt** fizetendő teljes áron megy, forintra átváltva. Az árfolyamot az EKB-tól kéri le induláskor és utána óránként. A Beállítások → Árfolyamok résznél látod az aktuális PLN/RON/EUR árfolyamot, és kézzel is frissítheted. Ha nincs internet, a `config.json`-ban mentett értékkel számol.
 - Csak a **piaci ár alatti** hirdetés számít akciónak: alapból legalább 35%-kal a medián alatt (Beállítások → Ár a piaci árhoz képest), és legalább „Jó” állapotú (Beállítások → Minimális állapot).
 - Figyelmeztetést tesz a kártyára, ha a hirdetés gyanúsan olcsó (a medián 30%-a alatt), vagy a címben „doboz”, „fotó”, „replika” és hasonló szó szerepel. Ez a leggyakoribb átverés a Vinteden: töredékáron hirdetett telefon, amiből csak a doboz jön.
 
@@ -61,6 +65,8 @@ Ha az app nincs előtérben, Windows-értesítést küld. Ha előtérben van, cs
 | `config.json` | Keresések és beállítások. Az app írja, de kézzel is szerkesztheted. |
 | `state.json` | A már látott hirdetések és a gyűjtött árak. Ha törlöd, újra mintát gyűjt. |
 | `akciok.json` | Az elmentett akciók. |
+| `figyelolista.json` | A Mentett fülön követett hirdetések. |
+| `arnaplo.json` | A piaci árak óránkénti naplója az ártörténet-grafikonhoz. |
 
 ## Python-os futtatás (fejlesztéshez)
 ```
@@ -68,6 +74,8 @@ pip install pywebview
 python app.py
 ```
 A régi, konzolos változat továbbra is működik: `python vinted_bot.py`.
+
+A motor gyors önellenőrzése (hálózat nélkül): `python test_engine.py`.
 
 ## Fontos
 - A Vinted 2026 szeptemberében megszüntette a korábbi keresési API-t. Az app ezért a keresési oldalt olvassa, ugyanazt, amit a böngésző mutat. Ha a Vinted ezt is átalakítja, az országoknál hibaüzenet jelenik meg, és frissíteni kell az appot.
