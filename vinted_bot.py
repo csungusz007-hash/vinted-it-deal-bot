@@ -7,7 +7,7 @@ Vinted IT-akció figyelő bot – vinted.hu / vinted.pl / vinted.ro
 - Minden új hirdetést forintra vált, és összeveti az adott keresés eddigi
   árainak mediánjával. Ha jóval olcsóbb (pl. 35%-kal a medián alatt) és
   a megadott ársávban van, azonnal kiírja: ár, Ft-ban, kedvezmény, link,
-  feltöltés ideje másodpercre.
+  észlelés ideje másodpercre.
 - Opcionális értesítés: Telegram és/vagy Discord.
 - Csak a Python standard könyvtárát használja (Python 3.8+).
 
@@ -19,6 +19,7 @@ import http.cookiejar
 import json
 import os
 import random
+import re
 import statistics
 import sys
 import threading
@@ -44,7 +45,8 @@ LANG = {"hu": "hu-HU,hu;q=0.9,en;q=0.6",
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 
-os.system("")  # ANSI színek bekapcsolása Windows konzolon
+if os.name == "nt" and sys.stdout is not None and sys.stdout.isatty():
+    os.system("")  # ANSI színek bekapcsolása Windows konzolon
 C = {"g": "\033[92m", "y": "\033[93m", "c": "\033[96m", "r": "\033[91m",
      "d": "\033[2m", "b": "\033[1m", "x": "\033[0m"}
 
@@ -94,18 +96,20 @@ class VintedClient:
             r.read()
         self.cookie_time = time.time()
 
-    def search(self, text, per_page=96):
+    def search(self, text):
+        """A katalógus-oldalt tölti le (ugyanazt, amit a böngésző), és kiolvassa
+        belőle a beágyazott hirdetésadatokat. A régi /api/v2/catalog/items
+        végpont 2026 őszén megszűnt (404)."""
         if time.time() - self.cookie_time > self.SESSION_MAX_AGE:
             self._new_session()
-        params = {"page": 1, "per_page": per_page, "search_text": text,
-                  "order": "newest_first"}
-        url = f"https://{self.host}/api/v2/catalog/items?" + urllib.parse.urlencode(params)
+        params = {"search_text": text, "order": "newest_first"}
+        url = f"https://{self.host}/catalog?" + urllib.parse.urlencode(params)
         for attempt in range(4):
             try:
-                req = urllib.request.Request(url, headers=self._headers())
-                with self.opener.open(req, timeout=20) as r:
-                    data = json.loads(r.read().decode("utf-8", "replace"))
-                return data.get("items", []) or []
+                req = urllib.request.Request(url, headers=self._headers(html=True))
+                with self.opener.open(req, timeout=25) as r:
+                    html = r.read().decode("utf-8", "replace")
+                return extract_items(html)
             except urllib.error.HTTPError as e:
                 if e.code in (401, 403):
                     time.sleep(2 + attempt * 3)
@@ -121,13 +125,47 @@ class VintedClient:
 
 
 # ---------------------------------------------------------------- Adatfeldolgozás
+_NEXTF_RE = re.compile(r'self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)')
+
+
+def extract_items(html):
+    """Kiszedi a katalógus-oldalba ágyazott (Next.js) hirdetés-objektumokat."""
+    parts = []
+    for m in _NEXTF_RE.finditer(html):
+        try:
+            parts.append(json.loads(m.group(1)))
+        except ValueError:
+            pass
+    text = "".join(parts)
+    dec = json.JSONDecoder()
+    key = '"productItem":'
+    items, ids, pos = [], set(), 0
+    while True:
+        i = text.find(key, pos)
+        if i < 0:
+            break
+        start = i + len(key)
+        while start < len(text) and text[start] in " \t\r\n":
+            start += 1
+        try:
+            obj, pos = dec.raw_decode(text, start)
+        except ValueError:
+            pos = start
+            continue
+        if isinstance(obj, dict) and obj.get("id") and obj["id"] not in ids:
+            ids.add(obj["id"])
+            items.append(obj)
+    return items
+
+
 def money(v, fallback_cur=None):
-    """A Vinted az árat hol szövegként, hol {'amount','currency_code'} objektumként adja."""
+    """Ár kiolvasása: {'amount','currencyCode'} objektum vagy sima szám/szöveg."""
     if v is None:
         return None, fallback_cur
     if isinstance(v, dict):
         try:
-            return float(v.get("amount")), v.get("currency_code") or fallback_cur
+            cur = v.get("currencyCode") or v.get("currency_code") or fallback_cur
+            return float(v.get("amount")), cur
         except (TypeError, ValueError):
             return None, fallback_cur
     try:
@@ -138,12 +176,13 @@ def money(v, fallback_cur=None):
 
 def normalize(raw, country):
     price, cur = money(raw.get("price"), raw.get("currency"))
-    total, _ = money(raw.get("total_item_price"), cur)
-    photo = raw.get("photo") or {}
-    ts = (photo.get("high_resolution") or {}).get("timestamp")
+    total, _ = money(raw.get("totalItemPrice") or raw.get("total_item_price"), cur)
+    box = raw.get("itemBox") or {}
     url = raw.get("url") or f"/items/{raw.get('id')}"
     if url.startswith("/"):
         url = f"https://{DOMAINS[country]}{url}"
+    brand = box.get("firstLine") or raw.get("brand_title") or ""
+    status = box.get("secondLine") or raw.get("status") or ""
     return {
         "id": str(raw.get("id")),
         "title": raw.get("title") or "",
@@ -151,10 +190,13 @@ def normalize(raw, country):
         "cur": (cur or "").upper(),
         "total": total,
         "url": url,
-        "brand": raw.get("brand_title") or "",
-        "status": raw.get("status") or "",
-        "ts": ts if isinstance(ts, (int, float)) else None,
+        "brand": brand if isinstance(brand, str) and not brand.startswith("$") else "",
+        "status": status if isinstance(status, str) and not status.startswith("$") else "",
+        "ts": None,  # a katalógus-oldal nem tartalmazza a feltöltés idejét
         "country": country,
+        "photo": raw.get("thumbnailUrl") or "",
+        "seller": str((raw.get("user") or {}).get("id") or ""),
+        "promoted": bool(raw.get("isPromoted")),
     }
 
 
@@ -279,8 +321,10 @@ def report(item, search, huf, med, ratio, cfg):
         up = datetime.fromtimestamp(item["ts"]).strftime("%Y-%m-%d %H:%M:%S")
         age = int(time.time() - item["ts"])
         age_s = f"{age} mp-e" if age < 120 else f"{age // 60} perce"
+        when = f"feltöltve: {up} ({age_s}) · észlelve: {found}"
     else:
-        up, age_s = "?", "?"
+        up = ""
+        when = f"észlelve: {found}"
     cur = item["cur"]
     price_s = f"{fmt_num(item['price'])} {'Ft' if cur == 'HUF' else cur}"
     huf_s = "" if cur == "HUF" else f" (≈ {fmt_num(huf)} Ft)"
@@ -294,7 +338,7 @@ def report(item, search, huf, med, ratio, cfg):
         f"   {C['b']}{item['title']}{C['x']}  {C['d']}{item['brand']} · {item['status']}{C['x']}\n"
         f"   {C['y']}{deal_s}{C['x']}\n"
         f"   {C['c']}{item['url']}{C['x']}\n"
-        f"   {C['d']}feltöltve: {up} ({age_s}) · észlelve: {found}{C['x']}")
+        f"   {C['d']}{when}{C['x']}")
 
     with _csv_lock:
         new = not os.path.exists(LOG_PATH)
@@ -308,7 +352,7 @@ def report(item, search, huf, med, ratio, cfg):
                         round((1 - ratio) * 100) if ratio is not None else "", item["url"]])
 
     notify(cfg, f"🔥 [{cc}] {search['name']}: {price_s}{huf_s}\n{item['title']}\n"
-                f"{deal_s}\nFeltöltve: {up} ({age_s})\n{item['url']}")
+                f"{deal_s}\n{when}\n{item['url']}")
 
 
 # ---------------------------------------------------------------- Árfolyam
@@ -370,7 +414,7 @@ def country_worker(country, cfg, state, rates, stop):
                             seen_set.add(it["id"])
                             res = evaluate(it, search, cfg, hist, rates)
                             if res and (seeded or cfg.get("alert_on_start", False)):
-                                if state.mark_alerted(f"{country}:{it['id']}"):
+                                if state.mark_alerted(it["id"]):  # országtól független
                                     hits.append((it, res))
                     for it, (huf, med, ratio) in hits:
                         report(it, search, huf, med, ratio, cfg)
