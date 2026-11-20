@@ -1,4 +1,4 @@
-name: Windows .exe build
+name: Windows app build
 
 on:
   push:
@@ -7,6 +7,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: windows-build
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -18,18 +22,26 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: PyInstaller telepítése
-        run: pip install pyinstaller
+      - name: Csomagok telepítése
+        run: |
+          pip install pyinstaller pywebview pillow
+          python make_icon.py
 
-      - name: .exe fordítása
-        run: pyinstaller --onefile --console --name VintedBot vinted_bot.py
+      - name: App fordítása
+        run: pyinstaller --onefile --windowed --name VintedFigyelo --icon app.ico --add-data "app_ui.html;." --collect-all webview app.py
+
+      - name: Önteszt a kész .exe-vel
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist/VintedFigyelo.exe -ArgumentList "--selftest" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Az önteszt elbukott (kilépési kód: $($p.ExitCode))" }
 
       - name: ZIP összeállítása
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force VintedBot | Out-Null
-          Copy-Item dist/VintedBot.exe, config.json, README.md VintedBot/
-          Compress-Archive -Path VintedBot/* -DestinationPath VintedBot-windows.zip -Force
+          New-Item -ItemType Directory -Force VintedFigyelo | Out-Null
+          Copy-Item dist/VintedFigyelo.exe, config.json, README.md VintedFigyelo/
+          Compress-Archive -Path VintedFigyelo/* -DestinationPath VintedFigyelo-windows.zip -Force
 
       - name: Feltöltés a "latest" kiadásba
         shell: pwsh
@@ -38,4 +50,4 @@ jobs:
         run: |
           gh release delete latest --yes --cleanup-tag 2>$null
           $global:LASTEXITCODE = 0
-          gh release create latest VintedBot-windows.zip --title "VintedBot (Windows)" --notes "Csomagold ki, és indítsd el a VintedBot.exe-t. Python nem kell hozzá. Build: ${{ github.sha }}"
+          gh release create latest VintedFigyelo-windows.zip --title "Vinted IT-figyelő (Windows app)" --notes "Csomagold ki, és indítsd el a VintedFigyelo.exe-t. Python nem kell hozzá. Build: ${{ github.sha }}"
