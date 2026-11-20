@@ -1,7 +1,7 @@
 {
   "countries": ["hu", "pl", "ro"],
 
-  "poll_interval_sec": 5,
+  "poll_interval_sec": 3,
   "request_gap_sec": 1.5,
 
   "deal_threshold": 0.65,
