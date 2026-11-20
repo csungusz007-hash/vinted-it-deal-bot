@@ -9,6 +9,34 @@ Windows-os asztali app, ami a vinted.hu, vinted.pl és vinted.ro oldalon figyeli
 
 Python nem kell hozzá. A felületet a Windowsba épített Edge WebView2 rajzolja ki, ez Windows 10 és 11 alatt alapból megvan.
 
+## Android (telefon)
+1. Telefonon nyisd meg a repó **Releases → Vinted IT-figyelő (Android)** kiadását, és töltsd le a `VintedFigyelo.apk`-t.
+2. Nyisd meg a letöltött fájlt. Ha a telefon kéri, engedélyezd a böngészőnek az „ismeretlen forrásból” való telepítést.
+3. Első indításkor engedélyezd az értesítéseket, és azt is, hogy az akkumulátor-optimalizálás ne állítsa le az appot. Enélkül az Android a háttérben leállíthatja a figyelést.
+
+A telefonos app ugyanazt tudja, mint a Windows-os: a figyelés a háttérben fut (az értesítési sávban „Figyelés fut” jelzi), új akciónál értesítést kapsz, koppintásra megnyílik a hirdetés. A vissza gomb csak háttérbe teszi az appot, a figyelést a „Figyelés szüneteltetése” gomb állítja le.
+
+## Akció-csomagok (célárak)
+Az alapbeállításban 27 kész keresés van, mindegyiknek célára: ha egy hirdetés a Vinted-díjjal együtt ennél olcsóbb és legalább „Jó” állapotú, akció. Például:
+
+| Csomag | Célár |
+|---|---|
+| RTX 3060 / 3070 / 3080 | 60 000 / 80 000 / 115 000 Ft |
+| RTX 4060 / 4060 Ti / 4070 | 60 000 / 75 000 / 100 000 Ft |
+| RX 6700 XT | 85 000 Ft |
+| DDR4 16GB / DDR4 32GB / DDR5 32GB | 25 000 / 40 000 / 80 000 Ft |
+| SSD 1TB / 2TB NVMe | 18 000 / 32 000 Ft |
+| iPhone 13 / 14 / 15 / 15 Pro | 55 000 / 72 000 / 100 000 / 125 000 Ft |
+| Galaxy S23 / S24 | 58 000 / 78 000 Ft |
+| Fülhallgatók (bármilyen vezeték nélküli) | 10 000 Ft |
+| AirPods Pro 2 / AirPods 3–4 | 32 000 / 20 000 Ft |
+| Sony WH-1000XM5 / XM4 | 42 000 / 30 000 Ft |
+| Logitech G502, Ryzen 5 5600 / 7600, 27" 144Hz monitor | 9 000 / 32 000 / 45 000 / 35 000 Ft |
+
+A célárak 2026 novemberi magyar használt árakból indulnak (kb. 25–40%-kal a szokásos ár alatt). Az RTX 4070 100 000 Ft-os célára ennél szigorúbb (a tipikus használt ár 185–215 ezer Ft), ott ritkán lesz találat. Minden célár átírható a keresés szerkesztőjében, és saját keresést is felvehetsz.
+
+Az első kör a már fent lévő hirdetések közül is kigyűjti a célár alattiakat a listába (értesítés nélkül). Utána csak az új hirdetésekről jön értesítés, keresésenként a legolcsóbbról.
+
 ## Mit látsz az appban
 - **Akciók**: kártyák fotóval, árral (külföldi árnál forintban is), árcímkével (Kiváló ár, Jó ár, Korrekt ár) és egy sávval, ami megmutatja, hol van a teljes ár a keresés mediánjához képest. Kattintásra megnyílik a hirdetés a böngészőben.
 - **Összes új hirdetés**: minden friss hirdetés a keresésekből, akkor is, ha nem akció. Ebből látod, hogy a figyelő dolgozik.

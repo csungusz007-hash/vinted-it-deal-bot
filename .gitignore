@@ -5,3 +5,9 @@ akciok.json
 akciok.json.tmp
 app.ico
 __pycache__/
+android/app/release.keystore
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/
+android/app/src/main/res/mipmap-*/

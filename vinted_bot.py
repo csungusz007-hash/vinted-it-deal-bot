@@ -208,6 +208,9 @@ def text_ok(title, search, cfg):
     must = search.get("must_contain")
     if must and not any(w.lower() in t for w in must):
         return False
+    must_all = search.get("must_all")
+    if must_all and not all(w.lower() in t.replace(" ", "") or w.lower() in t for w in must_all):
+        return False
     return True
 
 

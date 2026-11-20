@@ -1,101 +1,542 @@
 {
-  "countries": ["hu", "pl", "ro"],
-
+  "countries": [
+    "hu",
+    "pl",
+    "ro"
+  ],
   "poll_interval_sec": 3,
   "request_gap_sec": 1.5,
-
   "deal_threshold": 0.65,
   "min_history": 15,
   "alert_on_start": false,
   "verbose": false,
-
-  "to_huf": { "HUF": 1, "PLN": 92, "RON": 78, "EUR": 390 },
-
+  "to_huf": {
+    "HUF": 1,
+    "PLN": 87,
+    "RON": 74,
+    "EUR": 370
+  },
   "notify": {
     "telegram_bot_token": "",
     "telegram_chat_id": "",
     "discord_webhook": ""
   },
-
+  "app": {
+    "windows_notify": true,
+    "sound": true,
+    "notify_mode": "best",
+    "min_condition": 3
+  },
   "exclude_words": [
-    "hibás", "törött", "alkatrész", "csak doboz", "nem működik", "icloud zár", "kártyafüggő",
-    "uszkodz", "zepsut", "na części", "tylko pudełko", "nie działa", "blokada icloud",
-    "defect", "defekt", "stricat", "pentru piese", "doar cutia", "nu funcționează", "blocat icloud",
-    "broken", "for parts", "icloud lock", "box only"
+    "hibás",
+    "törött",
+    "alkatrész",
+    "csak doboz",
+    "nem működik",
+    "icloud zár",
+    "kártyafüggő",
+    "keresek",
+    "üres doboz",
+    "uszkodz",
+    "zepsut",
+    "na części",
+    "tylko pudełko",
+    "nie działa",
+    "blokada icloud",
+    "kupię",
+    "szukam",
+    "defect",
+    "defekt",
+    "stricat",
+    "pentru piese",
+    "doar cutia",
+    "nu funcționează",
+    "blocat icloud",
+    "cumpăr",
+    "broken",
+    "for parts",
+    "icloud lock",
+    "box only",
+    "empty box"
   ],
-
   "searches": [
     {
-      "name": "RAM DDR4",
-      "queries": { "hu": ["ddr4 ram"], "pl": ["ram ddr4"], "ro": ["memorie ddr4", "ram ddr4"] },
-      "must_contain": ["ddr4"],
-      "min_price_huf": 2500, "max_price_huf": 40000
+      "name": "RTX 3060 60 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "rtx 3060"
+        ]
+      },
+      "target_price_huf": 60000,
+      "min_price_huf": 30000,
+      "must_contain": [
+        "3060"
+      ]
     },
     {
-      "name": "RAM DDR5",
-      "queries": { "hu": ["ddr5 ram"], "pl": ["ram ddr5"], "ro": ["memorie ddr5", "ram ddr5"] },
-      "must_contain": ["ddr5"],
-      "min_price_huf": 8000, "max_price_huf": 80000
+      "name": "RTX 3070 80 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "rtx 3070"
+        ]
+      },
+      "target_price_huf": 80000,
+      "min_price_huf": 40000,
+      "must_contain": [
+        "3070"
+      ]
     },
     {
-      "name": "RTX 3060",
-      "queries": { "all": ["rtx 3060"] },
-      "must_contain": ["3060"],
-      "min_price_huf": 30000, "max_price_huf": 110000
+      "name": "RTX 3080 115 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "rtx 3080"
+        ]
+      },
+      "target_price_huf": 115000,
+      "min_price_huf": 55000,
+      "must_contain": [
+        "3080"
+      ]
     },
     {
-      "name": "RTX 3070 / 3080",
-      "queries": { "all": ["rtx 3070", "rtx 3080"] },
-      "must_contain": ["3070", "3080"],
-      "min_price_huf": 50000, "max_price_huf": 200000
+      "name": "RTX 4060 60 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "rtx 4060"
+        ]
+      },
+      "target_price_huf": 60000,
+      "min_price_huf": 30000,
+      "must_contain": [
+        "4060"
+      ]
     },
     {
-      "name": "RTX 40xx",
-      "queries": { "all": ["rtx 4060", "rtx 4070"] },
-      "must_contain": ["4060", "4070"],
-      "min_price_huf": 60000, "max_price_huf": 260000
+      "name": "RTX 4060 Ti 75 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "rtx 4060 ti"
+        ]
+      },
+      "target_price_huf": 75000,
+      "min_price_huf": 38000,
+      "must_all": [
+        "4060",
+        "ti"
+      ]
     },
     {
-      "name": "Videókártya (általános)",
-      "queries": { "hu": ["videókártya"], "pl": ["karta graficzna"], "ro": ["placa video"] },
+      "name": "RTX 4070 100 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "rtx 4070"
+        ]
+      },
+      "target_price_huf": 100000,
+      "min_price_huf": 50000,
+      "must_contain": [
+        "4070"
+      ]
+    },
+    {
+      "name": "RX 6700 XT 85 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "rx 6700 xt"
+        ]
+      },
+      "target_price_huf": 85000,
+      "min_price_huf": 40000,
+      "must_contain": [
+        "6700"
+      ]
+    },
+    {
+      "name": "DDR4 16GB 25 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "hu": [
+          "ddr4 16gb"
+        ],
+        "pl": [
+          "ram ddr4 16gb"
+        ],
+        "ro": [
+          "memorie ddr4 16gb"
+        ]
+      },
+      "target_price_huf": 25000,
       "min_price_huf": 8000,
-      "deal_threshold": 0.5
+      "must_all": [
+        "ddr4",
+        "16"
+      ],
+      "exclude_words": [
+        "sodimm",
+        "so-dimm",
+        "laptop",
+        "notebook",
+        "ecc",
+        "2400",
+        "2133",
+        "2666"
+      ]
     },
     {
-      "name": "SSD NVMe",
-      "queries": { "hu": ["nvme ssd"], "pl": ["dysk ssd nvme"], "ro": ["ssd nvme"] },
-      "must_contain": ["nvme", "m.2", "m2"],
-      "min_price_huf": 4000, "max_price_huf": 50000
+      "name": "DDR4 32GB 40 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "hu": [
+          "ddr4 32gb"
+        ],
+        "pl": [
+          "ram ddr4 32gb"
+        ],
+        "ro": [
+          "memorie ddr4 32gb"
+        ]
+      },
+      "target_price_huf": 40000,
+      "min_price_huf": 15000,
+      "must_all": [
+        "ddr4",
+        "32"
+      ],
+      "exclude_words": [
+        "sodimm",
+        "so-dimm",
+        "laptop",
+        "notebook",
+        "ecc",
+        "2400",
+        "2133",
+        "2666"
+      ]
     },
     {
-      "name": "iPhone 13 / 14",
-      "queries": { "all": ["iphone 13", "iphone 14"] },
-      "must_contain": ["iphone 13", "iphone 14"],
-      "min_price_huf": 70000, "max_price_huf": 220000
+      "name": "DDR5 32GB 80 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "hu": [
+          "ddr5 32gb"
+        ],
+        "pl": [
+          "ram ddr5 32gb"
+        ],
+        "ro": [
+          "memorie ddr5 32gb"
+        ]
+      },
+      "target_price_huf": 80000,
+      "min_price_huf": 30000,
+      "must_all": [
+        "ddr5",
+        "32"
+      ],
+      "exclude_words": [
+        "sodimm",
+        "so-dimm",
+        "laptop",
+        "notebook",
+        "ecc"
+      ]
     },
     {
-      "name": "iPhone 15",
-      "queries": { "all": ["iphone 15"] },
-      "must_contain": ["iphone 15"],
-      "min_price_huf": 120000, "max_price_huf": 330000
+      "name": "SSD 1TB NVMe 18 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "hu": [
+          "ssd 1tb nvme"
+        ],
+        "pl": [
+          "dysk ssd 1tb nvme"
+        ],
+        "ro": [
+          "ssd 1tb nvme"
+        ]
+      },
+      "target_price_huf": 18000,
+      "min_price_huf": 7000,
+      "must_contain": [
+        "nvme",
+        "m.2",
+        "m2"
+      ],
+      "must_all": [
+        "1tb"
+      ]
     },
     {
-      "name": "Samsung Galaxy S23 / S24",
-      "queries": { "all": ["galaxy s23", "galaxy s24"] },
-      "must_contain": ["s23", "s24"],
-      "min_price_huf": 60000, "max_price_huf": 260000
+      "name": "SSD 2TB NVMe 32 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "hu": [
+          "ssd 2tb nvme"
+        ],
+        "pl": [
+          "dysk ssd 2tb nvme"
+        ],
+        "ro": [
+          "ssd 2tb nvme"
+        ]
+      },
+      "target_price_huf": 32000,
+      "min_price_huf": 12000,
+      "must_contain": [
+        "nvme",
+        "m.2",
+        "m2"
+      ],
+      "must_all": [
+        "2tb"
+      ]
     },
     {
-      "name": "AirPods Pro",
-      "queries": { "all": ["airpods pro"] },
-      "must_contain": ["airpods pro"],
-      "min_price_huf": 15000, "max_price_huf": 70000
+      "name": "iPhone 13 55 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "iphone 13"
+        ]
+      },
+      "target_price_huf": 55000,
+      "min_price_huf": 30000,
+      "must_contain": [
+        "iphone 13"
+      ]
     },
     {
-      "name": "Sony WH-1000XM",
-      "queries": { "all": ["wh-1000xm4", "wh-1000xm5", "sony xm5"] },
-      "must_contain": ["xm4", "xm5"],
-      "min_price_huf": 25000, "max_price_huf": 110000
+      "name": "iPhone 14 72 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "iphone 14"
+        ]
+      },
+      "target_price_huf": 72000,
+      "min_price_huf": 40000,
+      "must_contain": [
+        "iphone 14"
+      ]
+    },
+    {
+      "name": "iPhone 15 100 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "iphone 15"
+        ]
+      },
+      "target_price_huf": 100000,
+      "min_price_huf": 55000,
+      "must_contain": [
+        "iphone 15"
+      ]
+    },
+    {
+      "name": "iPhone 15 Pro 125 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "iphone 15 pro"
+        ]
+      },
+      "target_price_huf": 125000,
+      "min_price_huf": 70000,
+      "must_all": [
+        "iphone 15",
+        "pro"
+      ]
+    },
+    {
+      "name": "Galaxy S23 58 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "galaxy s23"
+        ]
+      },
+      "target_price_huf": 58000,
+      "min_price_huf": 30000,
+      "must_contain": [
+        "s23"
+      ]
+    },
+    {
+      "name": "Galaxy S24 78 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "galaxy s24"
+        ]
+      },
+      "target_price_huf": 78000,
+      "min_price_huf": 40000,
+      "must_contain": [
+        "s24"
+      ]
+    },
+    {
+      "name": "Fülhallgatók 10 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "hu": [
+          "bluetooth fülhallgató",
+          "vezeték nélküli fülhallgató"
+        ],
+        "pl": [
+          "słuchawki bezprzewodowe"
+        ],
+        "ro": [
+          "căști wireless",
+          "casti bluetooth"
+        ]
+      },
+      "target_price_huf": 10000,
+      "min_price_huf": 2500,
+      "exclude_words": [
+        "tok",
+        "etui",
+        "husă",
+        "husa",
+        "töltőtok",
+        "case only",
+        "csak tok"
+      ]
+    },
+    {
+      "name": "AirPods Pro 2 32 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "airpods pro 2"
+        ]
+      },
+      "target_price_huf": 32000,
+      "min_price_huf": 22000,
+      "must_all": [
+        "airpods pro"
+      ]
+    },
+    {
+      "name": "AirPods 3 / 4 20 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "airpods 3",
+          "airpods 4"
+        ]
+      },
+      "target_price_huf": 20000,
+      "min_price_huf": 12000,
+      "must_contain": [
+        "airpods 3",
+        "airpods 4",
+        "airpods (3",
+        "airpods (4"
+      ]
+    },
+    {
+      "name": "Sony WH-1000XM5 42 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "wh-1000xm5",
+          "sony xm5"
+        ]
+      },
+      "target_price_huf": 42000,
+      "min_price_huf": 25000,
+      "must_contain": [
+        "xm5"
+      ]
+    },
+    {
+      "name": "Sony WH-1000XM4 30 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "wh-1000xm4",
+          "sony xm4"
+        ]
+      },
+      "target_price_huf": 30000,
+      "min_price_huf": 18000,
+      "must_contain": [
+        "xm4"
+      ]
+    },
+    {
+      "name": "Logitech G502 9 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "logitech g502"
+        ]
+      },
+      "target_price_huf": 9000,
+      "min_price_huf": 4000,
+      "must_contain": [
+        "g502"
+      ]
+    },
+    {
+      "name": "Ryzen 5 5600 32 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "ryzen 5 5600"
+        ]
+      },
+      "target_price_huf": 32000,
+      "min_price_huf": 15000,
+      "must_contain": [
+        "5600"
+      ]
+    },
+    {
+      "name": "Ryzen 5 7600 45 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "ryzen 5 7600"
+        ]
+      },
+      "target_price_huf": 45000,
+      "min_price_huf": 25000,
+      "must_contain": [
+        "7600"
+      ]
+    },
+    {
+      "name": "27\" 144Hz monitor 35 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "hu": [
+          "27 144hz monitor"
+        ],
+        "pl": [
+          "monitor 27 144hz"
+        ],
+        "ro": [
+          "monitor 27 144hz"
+        ]
+      },
+      "target_price_huf": 35000,
+      "min_price_huf": 15000,
+      "must_contain": [
+        "144",
+        "165",
+        "170"
+      ]
     }
   ]
 }

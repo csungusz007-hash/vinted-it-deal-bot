@@ -12,6 +12,7 @@ Indítás fejlesztéshez:  python app.py
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 import threading
@@ -58,9 +59,9 @@ def condition_rank(status):
     return 3
 
 
-def rating_for(ratio):
+def rating_for(ratio, target_hit=False):
     if ratio is None:
-        return "new", "Új minta"
+        return ("target", "Célár alatt") if target_hit else ("new", "Új minta")
     if ratio <= 0.5:
         return "great", "Kiváló ár"
     if ratio <= 0.7:
@@ -68,6 +69,23 @@ def rating_for(ratio):
     if ratio <= 0.9:
         return "fair", "Korrekt ár"
     return "high", "Átlag feletti"
+
+
+def notification_text(rec):
+    """Rövid értesítés, pl. „85 000 Ft · RTX 4070 · Nagyon jó · −45%”."""
+    name = re.sub(r"\s+\d{1,3}(?:\s\d{3})*\s*Ft alatt$", "", rec["search"]).strip()
+    parts = [rec["price_label"], name]
+    if rec["status"]:
+        parts.append(rec["status"])
+    if rec.get("ratio") is not None and rec["ratio"] < 1:
+        parts.append(f"−{round((1 - rec['ratio']) * 100)}%")
+    if rec.get("target_huf"):
+        ref = f"Célár: {core.fmt_num(rec['target_huf'])} Ft, díjjal {core.fmt_num(rec['total_huf'])} Ft"
+    elif rec.get("median_huf"):
+        ref = f"Piaci ár kb. {core.fmt_num(rec['median_huf'])} Ft"
+    else:
+        ref = f"Díjjal együtt {core.fmt_num(rec['total_huf'])} Ft"
+    return " · ".join(parts), f"{rec['title']}\n{ref} · {rec['country'].upper()}"
 
 
 # ---------------------------------------------------------------- Windows-értesítés
@@ -198,16 +216,29 @@ class Engine:
                 with self.lock:
                     searches = [s for s in self.cfg.get("searches", []) if s.get("enabled", True)]
                     gap = float(self.cfg.get("request_gap_sec", 1.5))
-                for search in searches:
-                    for q in core.queries_for(search, country):
-                        if stop.is_set():
-                            return
-                        items = client.search(q)
-                        self._process(country, search, q, items)
-                        self.stats["checked"] += 1
-                        stop.wait(gap + random.uniform(0, 0.7))
-                self.status[country].update(state="ok", msg="", last_ok=time.time(),
-                                            round_sec=round(time.time() - t0, 1))
+                jobs = [(s, q) for s in searches for q in core.queries_for(s, country)]
+                st = self.status[country]
+                first_round = st.get("last_ok") is None
+                empty = 0
+                for n, (search, q) in enumerate(jobs, 1):
+                    if stop.is_set():
+                        return
+                    items = client.search(q)
+                    empty += 0 if items else 1
+                    self._process(country, search, q, items)
+                    self.stats["checked"] += 1
+                    st["items"] = st.get("items", 0) + len(items)
+                    if first_round:
+                        st.update(state="ok", progress=f"{n}/{len(jobs)}",
+                                  msg=f"Első kör: {n}/{len(jobs)} keresés, {st['items']} hirdetés beolvasva")
+                    stop.wait(gap + random.uniform(0, 0.7))
+                if jobs and empty == len(jobs):
+                    st.update(state="error", msg="A Vinted minden keresésre üres oldalt adott. "
+                                                  "Lehet, hogy átalakították az oldalt, frissítés kellhet.")
+                    stop.wait(30)
+                    continue
+                st.update(state="ok", msg="", progress=None, last_ok=time.time(),
+                          round_sec=round(time.time() - t0, 1))
                 self.state.save()
                 stop.wait(float(self.cfg.get("poll_interval_sec", 5)))
             except Exception as e:
@@ -244,37 +275,42 @@ class Engine:
                     continue
                 seen.append(it["id"])
                 seen_set.add(it["id"])
-                if not seeded:
+                target = search.get("target_price_huf")
+                if not seeded and not target:
                     self._add_hist(it, search, hist)
                     continue
-                self.stats["new_items"] += 1
+                if seeded:
+                    self.stats["new_items"] += 1
                 rec = self._score(it, search, hist, min_hist, warn_words)
                 if rec is None:
                     continue
-                self.feed.appendleft(rec)
-                # Akció = a piaci (medián) ár alatt van a küszöb szerint. Medián nélkül nem jelez.
-                is_deal = rec["ratio"] is not None and rec["ratio"] <= thr
+                if seeded:
+                    self.feed.appendleft(rec)
+                # Akció: célár alatt (ha van célár), különben a piaci (medián) ár alatt a küszöb szerint.
+                if target:
+                    is_deal = rec["total_huf"] <= target
+                else:
+                    is_deal = rec["ratio"] is not None and rec["ratio"] <= thr
                 if not is_deal or it["seller"] in blocked or rec["cond_rank"] < min_cond:
                     continue
                 if not self.state.mark_alerted(it["id"]):
                     continue
                 best = self._best_total(search["name"])
                 rec["best"] = best is None or rec["total_huf"] < best
+                rec["first_round"] = not seeded
                 self.deals.insert(0, rec)
                 del self.deals[MAX_DEALS:]
                 self.seq += 1
-                if mode == "all" or rec["best"]:
+                # Az első kör (már fent lévő hirdetések) csak a listába kerül, értesítés az újakról jön.
+                if seeded and (mode == "all" or rec["best"]):
                     notify.append(rec)
         if notify:
             self._save_deals()
             app_cfg = self.cfg.get("app", {})
             for rec in notify:
                 if app_cfg.get("windows_notify", True) and not self.focused:
-                    pct = round((1 - rec["ratio"]) * 100)
-                    cond = f" · {rec['status']}" if rec["status"] else ""
-                    windows_toast(f"{rec['search']} · {rec['price_label']}{cond} · −{pct}%",
-                                  f"{rec['title']}\nPiaci ár kb. {core.fmt_num(rec['median_huf'])} Ft · "
-                                  f"{rec['country'].upper()}")
+                    title, body = notification_text(rec)
+                    windows_toast(title, body)
 
     def _best_total(self, search_name, window_sec=24 * 3600):
         """A keresés eddigi legolcsóbb akciója (teljes ár, Ft) az elmúlt 24 órából."""
@@ -311,7 +347,8 @@ class Engine:
         if mx and price > mx:
             return None
         ratio = total / med if med else None
-        rating, rating_label = rating_for(ratio)
+        target = search.get("target_price_huf")
+        rating, rating_label = rating_for(ratio, bool(target and total <= target))
         title_l = it["title"].lower()
         warnings = []
         if ratio is not None and ratio < 0.3:
@@ -332,6 +369,7 @@ class Engine:
             "rating": rating, "rating_label": rating_label,
             "warnings": warnings, "found": time.time(),
             "cond_rank": condition_rank(it["status"]), "best": False,
+            "target_huf": search.get("target_price_huf"),
         }
 
     # -- UI-nak
