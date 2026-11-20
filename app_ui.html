@@ -64,7 +64,12 @@ aside { background: var(--surface); border-right: 1px solid var(--border); displ
 .cstate .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .cstate.ok .dot { background: var(--deal); }
 .cstate.error .dot { background: var(--danger); border-radius: 2px; }
-.cstate.starting .dot { background: var(--warn); }
+.cstate.starting .dot, .cstate.wait .dot { background: var(--warn); }
+.chip.sold { background: var(--danger); color: #fff; }
+.chart { width: 100%; height: 220px; display: block; }
+.chart text { fill: var(--muted); font-size: 11px; }
+.srow .name[data-hist] { cursor: pointer; }
+.srow .name[data-hist]:hover { text-decoration: underline; }
 .cmsg { grid-column: 2; font-size: 12px; color: var(--muted); }
 .cstate.error + .cmsg { color: var(--danger); }
 .searches { flex: 1; overflow: auto; padding: 0 10px 10px; }
@@ -265,6 +270,7 @@ input[type=range] { width: 180px; accent-color: var(--accent); }
     <div class="seg" role="group" aria-label="Nézet">
       <button id="vDeals" aria-pressed="true">Akciók <span class="badge" id="dealCount">0</span></button>
       <button id="vFeed" aria-pressed="false">Összes új hirdetés</button>
+      <button id="vWatch" aria-pressed="false">Mentett <span class="badge" id="watchCount">0</span></button>
     </div>
     <div class="spacer"></div>
     <label class="field"><svg class="i"><use href="#i-search"/></svg><span class="sr">Szűrés címre</span><input id="q" type="search" placeholder="Szűrés címre"></label>
@@ -290,7 +296,7 @@ const Demo = (() => {
     ["JBL Tune 510BT vezeték nélküli", "Fülhallgatók 10 000 Ft alatt", "JBL", "Jó", 6500, "HUF", 0],
   ];
   const rate = { HUF: 1, PLN: 92, RON: 78 };
-  let deals = [], feed = [], t0 = Date.now() / 1000, running = true, seq = 0;
+  let deals = [], feed = [], watch = [], t0 = Date.now() / 1000, running = true, seq = 0;
   titles.forEach((t, i) => {
     const huf = Math.round(t[4] * rate[t[5]]), ratio = t[6] ? (huf * 1.07) / t[6] : null;
     const r = ratio == null ? ["target", "Célár alatt"] : ratio <= .5 ? ["great", "Kiváló ár"] : ratio <= .7 ? ["good", "Jó ár"] : ["fair", "Korrekt ár"];
@@ -304,7 +310,12 @@ const Demo = (() => {
     blocked_sellers: ["123456"], app: { windows_notify: true, sound: true, notify_mode: "best", min_condition: 3 },
     searches: [...new Set(titles.map(t => t[1]))].map(n => titles.find(t => t[1] === n)).map(t => ({ name: t[1], enabled: true, queries: { all: [t[1].toLowerCase()] }, min_price_huf: 2000, max_price_huf: 200000 })) };
   return {
-    snapshot: async () => ({ running, seq, now: Date.now() / 1000, deals, feed, counts: deals.reduce((a, d) => (a[d.search] = (a[d.search] || 0) + 1, a), {}),
+    refresh_rates: async () => true, watch_check: async () => true,
+    watch_add: async id => watch.push({ ...deals.find(d => d.id === id), saved_at: Date.now() / 1000 }),
+    watch_remove: async id => (watch = watch.filter(w => w.id !== id)),
+    price_history: async () => ({ points: Array.from({ length: 48 }, (_, i) => [t0 - (48 - i) * 3600, 100000 + Math.round(Math.sin(i / 6) * 6000)]), deals: [[t0 - 20000, 82000], [t0 - 5000, 76000]] }),
+    snapshot: async () => ({ running, seq, now: Date.now() / 1000, deals, feed, watch,
+      rates: { PLN: 86.4, RON: 72.9, EUR: 389.2 }, rates_info: { live: true, date: "2026-11-20", time: Date.now() / 1000 - 600 },
       stats: { checked: 412, new_items: 37, started: t0 - 600 },
       status: { hu: { state: running ? "ok" : "stopped", msg: "", last_ok: Date.now() / 1000 - 4, round_sec: 22.4 },
                 pl: { state: running ? "ok" : "stopped", msg: "", last_ok: Date.now() / 1000 - 9, round_sec: 24.1 },
@@ -328,7 +339,8 @@ const ready = new Promise(res => {
   if (window.AndroidApi) return res(androidApi());
   if (window.pywebview && window.pywebview.api) return res(window.pywebview.api);
   window.addEventListener("pywebviewready", () => res(window.pywebview.api));
-  setTimeout(() => res(null), 1500);
+  // Böngészőben demó adat; az appban (WebView2) megvárjuk a valódi API-t, akármeddig tart az indulás.
+  if (!window.chrome?.webview) setTimeout(() => res(null), 1500);
 });
 
 // ---------------------------------------------------------------- segédek
@@ -368,11 +380,11 @@ function renderSide() {
 
   $("#countries").innerHTML = ["hu", "pl", "ro"].map(c => {
     const st = S.status[c] || { state: "stopped" };
-    const label = { ok: "Fut", error: "Hiba", starting: "Kapcsolódás", stopped: "Szünetel" }[st.state] || st.state;
+    const label = { ok: "Fut", error: "Hiba", starting: "Kapcsolódás", stopped: "Szünetel", wait: "Várakozik" }[st.state] || st.state;
     let msg = "";
     if (st.state === "ok" && st.progress) msg = st.msg;
     else if (st.state === "ok" && st.last_ok) msg = `Frissült ${ago(st.last_ok, S.now)}${st.round_sec ? ` · ${Math.round(st.round_sec)} mp-es kör` : ""}`;
-    else if (st.state === "error") msg = st.msg;
+    else if (st.state === "error" || st.state === "wait") msg = st.msg;
     else if (st.state === "starting") msg = "Első lekérés folyamatban";
     return `<div class="country"><span class="cc" title="${COUNTRY[c]}">${c.toUpperCase()}</span>
       <span class="cstate ${st.state}"><span class="dot" aria-hidden="true"></span>${label}</span>
@@ -384,7 +396,7 @@ function renderSide() {
     $("#searches").innerHTML = cfgCache.searches.map((s, i) => `
       <div class="srow ${s.enabled === false ? "off" : ""}">
         <label class="switch" title="${s.enabled === false ? "Bekapcsolás" : "Kikapcsolás"}"><input type="checkbox" data-toggle="${i}" ${s.enabled === false ? "" : "checked"} aria-label="${esc(s.name)} figyelése"><span></span></label>
-        <span class="name" title="${esc(s.name)}${s.target_price_huf ? " · célár " + ft(s.target_price_huf) : ""}">${esc(s.name)}</span>
+        <span class="name" data-hist="${esc(s.name)}" role="button" tabindex="0" title="Ártörténet: ${esc(s.name)}${s.target_price_huf ? " · célár " + ft(s.target_price_huf) : ""}">${esc(s.name)}</span>
         ${bm[s.name] ? `<span class="best-price" title="A legolcsóbb akció az elmúlt 24 órában">${ft(bm[s.name].total_huf)}</span>` : `<span class="count" aria-hidden="true"></span>`}
       </div>`).join("");
   }
@@ -394,6 +406,7 @@ function renderSide() {
     ? `${st.checked} lekérés, ${st.new_items} új hirdetés · fut ${dur}`
     : `${st.checked} lekérés ebben a munkamenetben`;
   $("#dealCount").textContent = S.deals.length;
+  $("#watchCount").textContent = S.watch.length;
 }
 
 // ---------------------------------------------------------------- tartalom
@@ -424,6 +437,13 @@ function meter(d) {
     <div class="meter-track"><div class="meter-fill" style="width:${p}%"></div><div class="meter-med" style="left:calc(${m}% - 1px)"></div></div>
     <div class="meter-legend"><span>díjjal: ${ft(d.total_huf)}</span><span>piaci ár: ${ft(d.median_huf)}</span></div></div>`;
 }
+const T = d => (cfgCache?.app?.translate_titles !== false && d.title_hu) || d.title; // magyar cím, ha van
+function watchChip(d) {
+  if (!d.saved_at) return "";
+  if (d.sold || d.gone) return `<span class="chip sold">${d.sold ? "Eladva" : "Eltűnt"}</span>`;
+  if (d.reserved) return `<span class="chip fair">Foglalt</span>`;
+  return d.now_label && d.now_price !== d.price ? `<span class="chip good">Új ár: ${esc(d.now_label)}</span>` : "";
+}
 function card(d) {
   const pct = d.ratio != null ? Math.round((1 - d.ratio) * 100) : null;
   const chip = pct != null && pct > 0
@@ -434,12 +454,12 @@ function card(d) {
   const fresh = !firstLoad && !seenIds.has(d.id) ? " fresh" : "";
   const isBest = BEST[d.search]?.id === d.id;
   const bestChip = isBest ? `<span class="chip best">${icon("award")}Legjobb ajánlat</span>` : "";
-  return `<article class="card${fresh}${isBest ? " is-best" : ""}" tabindex="0" data-url="${esc(d.url)}" data-id="${esc(d.id)}" aria-label="${esc(d.title)}, ${esc(d.price_label)}, ${esc(d.rating_label)}">
+  return `<article class="card${fresh}${isBest ? " is-best" : ""}" tabindex="0" data-url="${esc(d.url)}" data-id="${esc(d.id)}" aria-label="${esc(T(d))}, ${esc(d.price_label)}, ${esc(d.rating_label)}">
     ${d.photo ? `<img class="thumb" src="${esc(d.photo)}" alt="" loading="lazy">` : `<div class="thumb" aria-hidden="true"></div>`}
     <div class="body">
-      <div class="title">${esc(d.title)}</div>
+      <div class="title" title="${esc(d.title)}">${esc(T(d))}</div>
       <div class="meta">${esc([d.brand, d.status].filter(Boolean).join(" · "))}</div>
-      <div class="price-row"><span class="price">${esc(d.price_label)}</span>${conv}${chip}${bestChip}</div>
+      <div class="price-row"><span class="price">${esc(d.price_label)}</span>${conv}${watchChip(d)}${chip}${bestChip}</div>
       ${meter(d)}
       ${(d.warnings || []).map(w => `<div class="warn">${icon("alert")}<span>${esc(w)}</span></div>`).join("")}
       <div class="foot"><span class="cc" title="${COUNTRY[d.country]}">${d.country.toUpperCase()}</span><span>${esc(d.search)}</span><span>·</span><time title="Észlelve">${clock(d.found)}, ${ago(d.found, S.now)}</time></div>
@@ -464,13 +484,19 @@ function renderContent() {
       el.innerHTML = banner + `<div class="empty"><h2>Nincs találat a szűrésre</h2><p>Próbálj másik szót vagy országot.</p></div>`;
     } else { BEST = bestMap(); el.innerHTML = banner + `<div class="grid">${list.map(card).join("")}</div>`; }
     S.deals.forEach(d => seenIds.add(d.id));
+  } else if (view === "watch") {
+    const list = filtered(S.watch);
+    el.innerHTML = banner + (list.length
+      ? `<div class="row" style="margin-bottom:12px;justify-content:space-between;display:flex;align-items:center"><span class="hint">10 percenként megnézi, eladták-e, foglalt-e, vagy változott-e az ára.</span><button class="btn" id="wCheck">Ellenőrzés most</button></div><div class="grid">${list.map(card).join("")}</div>`
+      : `<div class="empty"><div class="ill">${icon("award")}</div><h2>Még nincs mentett hirdetés</h2><p>Egy akció ⋮ menüjében a „Mentés” gombbal teheted ide. Szól, ha eladták vagy olcsóbb lett.</p></div>`);
+    $("#wCheck")?.addEventListener("click", async () => { await api.watch_check(); toast("Ellenőrzés elindítva"); });
   } else {
     const list = filtered(S.feed);
     el.innerHTML = banner + (list.length ? `<div class="feed" role="table" aria-label="Összes új hirdetés">
       <div class="frow fhead" role="row"><span></span><span>Hirdetés</span><span class="num">Ár díjjal</span><span class="num">Piaci ár</span><span class="num">Eltérés</span><span>Ország</span></div>
       ${list.map(d => `<div class="frow" role="row" tabindex="0" data-url="${esc(d.url)}">
         ${d.photo ? `<img src="${esc(d.photo)}" alt="" loading="lazy">` : `<div class="ph"></div>`}
-        <div class="t"><b>${esc(d.title)}</b><span>${esc(d.search)} · ${clock(d.found)}</span></div>
+        <div class="t"><b title="${esc(d.title)}">${esc(T(d))}</b><span>${esc(d.search)} · ${clock(d.found)}</span></div>
         <span class="num">${ft(d.total_huf)}</span><span class="num">${d.median_huf ? ft(d.median_huf) : "–"}</span>
         <span class="num">${d.ratio != null ? (d.ratio < 1 ? "−" : "+") + Math.abs(Math.round((1 - d.ratio) * 100)) + "%" : "–"}</span>
         <span>${d.country.toUpperCase()}</span></div>`).join("")}</div>`
@@ -483,8 +509,11 @@ let lastSig = "";
 async function tick() {
   try {
     const prev = S ? S.deals.length : 0;
-    S = await api.snapshot();
-    const sig = view + S.seq + "|" + S.deals.length + "|" + (S.feed[0]?.id || "") + S.feed.length;
+    const r = await api.snapshot(S ? S.seq : -1);
+    if (!r.deals) { r.deals = S.deals; r.feed = S.feed; r.watch = S.watch; } // nem változott, nem küldte újra
+    r.watch = r.watch || [];
+    S = r;
+    const sig = view + S.seq + "|" + S.deals.length + "|" + (S.feed[0]?.id || "") + S.feed.length + "|" + S.watch.length;
     renderSide();
     if (sig !== lastSig) { renderContent(); lastSig = sig; }
     else document.querySelectorAll("time[title='Észlelve']").forEach(() => {}); // idők a következő újrarajzoláskor frissülnek
@@ -500,17 +529,23 @@ document.addEventListener("click", async e => {
   const m = e.target.closest("[data-menu]");
   if (m) {
     e.stopPropagation(); closeMenu();
-    const d = S.deals.find(x => x.id === m.dataset.menu); if (!d) return;
+    const inWatch = view === "watch";
+    const d = (inWatch ? S.watch : S.deals).find(x => x.id === m.dataset.menu); if (!d) return;
+    const saved = S.watch.some(w => w.id === d.id);
     const r = m.getBoundingClientRect(), menu = document.createElement("div");
     menu.className = "menu"; menu.setAttribute("role", "menu");
     menu.style.top = r.bottom + 4 + "px"; menu.style.left = Math.max(8, r.right - 220) + "px";
     menu.innerHTML = `<button role="menuitem" data-act="open">${icon("ext")}Megnyitás a Vinteden</button>
-      <button role="menuitem" data-act="hide">${icon("eyeoff")}Elrejtés a listából</button>
-      <button role="menuitem" data-act="block" class="danger">${icon("ban")}Eladó letiltása</button>`;
+      ${saved ? `<button role="menuitem" data-act="unsave">${icon("trash")}Törlés a mentettek közül</button>`
+              : `<button role="menuitem" data-act="save">${icon("award")}Mentés (figyelem, eladják-e)</button>`}
+      ${inWatch ? "" : `<button role="menuitem" data-act="hide">${icon("eyeoff")}Elrejtés a listából</button>
+      <button role="menuitem" data-act="block" class="danger">${icon("ban")}Eladó letiltása</button>`}`;
     menu.addEventListener("click", async ev => {
       const a = ev.target.closest("[data-act]")?.dataset.act; if (!a) return;
       ev.stopPropagation(); closeMenu();
       if (a === "open") api.open_url(d.url);
+      if (a === "save") { await api.watch_add(d.id); toast("Mentve, a Mentett fülön követed"); }
+      if (a === "unsave") { await api.watch_remove(d.id); toast("Törölve a mentettek közül"); }
       if (a === "hide") { await api.hide_deal(d.id); toast("Elrejtve"); }
       if (a === "block") { await api.block_seller(d.seller); cfgCache = await api.get_config(); toast("Eladó letiltva, a hirdetései eltűntek"); }
       lastSig = ""; tick();
@@ -519,12 +554,15 @@ document.addEventListener("click", async e => {
     return;
   }
   closeMenu();
+  const h = e.target.closest("[data-hist]");
+  if (h) return openHistory(h.dataset.hist);
   const c = e.target.closest("[data-url]");
   if (c && !e.target.closest(".more")) api.open_url(c.dataset.url);
 });
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") { closeMenu(); closePanel(); }
   if (e.key === "Enter" && e.target.matches("[data-url]")) api.open_url(e.target.dataset.url);
+  if (e.key === "Enter" && e.target.matches("[data-hist]")) openHistory(e.target.dataset.hist);
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") { e.preventDefault(); $("#q").focus(); }
 });
 $("#searches").addEventListener("change", async e => {
@@ -536,7 +574,8 @@ $("#searches").addEventListener("change", async e => {
 $("#runBtn").onclick = async () => { S.running ? await api.stop() : await api.start(); tick(); };
 $("#vDeals").onclick = () => setView("deals");
 $("#vFeed").onclick = () => setView("feed");
-function setView(v) { view = v; $("#vDeals").setAttribute("aria-pressed", v === "deals"); $("#vFeed").setAttribute("aria-pressed", v === "feed"); lastSig = ""; tick(); }
+$("#vWatch").onclick = () => setView("watch");
+function setView(v) { view = v; [["#vDeals", "deals"], ["#vFeed", "feed"], ["#vWatch", "watch"]].forEach(([id, n]) => $(id).setAttribute("aria-pressed", v === n)); lastSig = ""; tick(); }
 ["#q", "#fCountry", "#fSort"].forEach(s => $(s).addEventListener("input", () => { lastSig = ""; renderContent(); }));
 window.addEventListener("focus", () => api && api.set_focus(true));
 window.addEventListener("blur", () => api && api.set_focus(false));
@@ -554,6 +593,33 @@ function openPanel(title, bodyHtml, footHtml) {
   return s;
 }
 
+async function openHistory(name) {
+  const h = await api.price_history(name) || { points: [], deals: [] };
+  const P = h.points, D = h.deals, all = P.concat(D);
+  let body;
+  if (P.length < 2 && !D.length) {
+    body = `<p class="hint">Még kevés az adat. A piaci árat óránként jegyzi fel, néhány óra után itt lesz a grafikon.</p>`;
+  } else {
+    const W = 640, H = 220, L = 70, B = 24, ts = all.map(p => p[0]), vs = all.map(p => p[1]);
+    const t0 = Math.min(...ts), t1 = Math.max(...ts, t0 + 1), v0 = Math.min(...vs) * .9, v1 = Math.max(...vs) * 1.05;
+    const x = t => L + (t - t0) / (t1 - t0) * (W - L - 10), y = v => (H - B) - (v - v0) / (v1 - v0) * (H - B - 10);
+    const day = t => new Date(t * 1000).toLocaleDateString("hu-HU", { month: "short", day: "numeric" });
+    body = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(name)} piaci ár alakulása">
+      ${[v0, (v0 + v1) / 2, v1].map(v => `<text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${esc(ft(v))}</text><line x1="${L}" x2="${W - 10}" y1="${y(v)}" y2="${y(v)}" stroke="var(--track)"/>`).join("")}
+      <text x="${L}" y="${H - 6}">${day(t0)}</text><text x="${W - 10}" y="${H - 6}" text-anchor="end">${day(t1)}</text>
+      ${P.length > 1 ? `<polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${P.map(p => `${x(p[0])},${y(p[1])}`).join(" ")}"/>` : ""}
+      ${D.map(p => `<circle cx="${x(p[0])}" cy="${y(p[1])}" r="3.5" fill="var(--deal)"><title>${esc(ft(p[1]))}, ${day(p[0])}</title></circle>`).join("")}
+    </svg><p class="hint">Vonal: piaci ár (medián, óránként). Zöld pontok: a talált akciók díjjal együtt.${P.length ? ` Jelenleg: ${esc(ft(P[P.length - 1][1]))}.` : ""}</p>`;
+  }
+  openPanel(`Ártörténet: ${name}`, body);
+}
+function ratesHtml() {
+  const r = S?.rates || {}, i = S?.rates_info || {};
+  const src = i.live ? `Élő ECB árfolyam${i.date ? ` (${i.date})` : ""}, lekérve ${i.time ? clock(i.time) : "–"}`
+    : i.time ? "Nem sikerült élő árfolyamot lekérni, a mentett értékkel számol" : "Lekérés folyamatban…";
+  return ["PLN", "RON", "EUR"].filter(c => r[c]).map(c => `<div class="row"><span class="lbl">1 ${c}</span><span class="val">${r[c].toLocaleString("hu-HU", { maximumFractionDigits: 2 })} Ft</span></div>`).join("")
+    + `<p class="hint">${esc(src)}</p>`;
+}
 function openSettings() {
   const c = cfgCache, a = c.app || {};
   const blocked = c.blocked_sellers || [];
@@ -568,12 +634,17 @@ function openSettings() {
     </div>
     <div class="group"><h3>Értesítések</h3>
       <div class="row"><label for="sWin">Windows-értesítés új akciónál<span class="hint">Csak akkor jön, ha az app nincs előtérben</span></label><span class="switch"><input type="checkbox" id="sWin" ${a.windows_notify !== false ? "checked" : ""}><span></span></span></div>
+      <div class="row"><label for="sTr">Címek magyarul<span class="hint">A lengyel és román címeket lefordítja (Google Fordító). Az eredeti cím az egérmutató alatt látszik.</span></label><span class="switch"><input type="checkbox" id="sTr" ${a.translate_titles !== false ? "checked" : ""}><span></span></span></div>
       <div class="row"><label for="sSound">Hangjelzés, ha az app előtérben van</label><span class="switch"><input type="checkbox" id="sSound" ${a.sound !== false ? "checked" : ""}><span></span></span></div>
       <div class="row"><label for="sMode">Miről szóljon<span class="hint">„Legolcsóbb”: termékenként csak akkor jön értesítés, ha az új akció olcsóbb az elmúlt 24 óra összes akciójánál</span></label>
         <select class="input" id="sMode" style="width:auto"><option value="best" ${a.notify_mode !== "all" ? "selected" : ""}>Csak a legolcsóbbról</option><option value="all" ${a.notify_mode === "all" ? "selected" : ""}>Minden akcióról</option></select></div>
       <div class="row"><label for="sCond">Minimális állapot<span class="hint">Ennél rosszabb állapotú hirdetés nem számít akciónak</span></label>
         <select class="input" id="sCond" style="width:auto">${[[5, "Csak új"], [4, "Nagyon jó vagy jobb"], [3, "Jó vagy jobb"], [2, "Megfelelő vagy jobb"], [0, "Bármilyen"]].map(([v, t]) => `<option value="${v}" ${(a.min_condition ?? 3) == v ? "selected" : ""}>${t}</option>`).join("")}</select></div>
       <div class="row"><span class="lbl"></span><button class="btn" id="sTest">${icon("bell")}Próba értesítés</button></div>
+    </div>
+    <div class="group"><h3>Árfolyamok (forintra váltás)</h3>
+      <div id="sRates">${ratesHtml()}</div>
+      <div class="row"><span class="lbl"><span class="hint">Az Európai Központi Bank napi árfolyama, óránként frissül magától. Ha nincs internet, a config.json-ban mentett értékkel számol.</span></span><button class="btn" id="sRatesBtn">Frissítés most</button></div>
     </div>
     <div class="group"><h3>Letiltott eladók (${blocked.length})</h3>
       ${blocked.length ? blocked.map(b => `<div class="row"><span class="lbl">Eladó #${esc(b)}</span><button class="btn ghost" data-unblock="${esc(b)}">Feloldás</button></div>`).join("") : `<p class="hint">Egy hirdetés ⋮ menüjében tudsz eladót letiltani.</p>`}
@@ -583,12 +654,18 @@ function openSettings() {
     </div>`, `<button class="btn" data-close>Mégse</button><button class="btn primary" id="sSave">Mentés</button>`);
   const pct = v => String(v).replace(".", ","), bind = (id, fmt) => { const f = () => $(id + "V").textContent = fmt($(id).value); $(id).oninput = f; f(); };
   bind("#sThr", v => `${pct((+v).toFixed(2))} (−${Math.round((1 - v) * 100)}%)`); bind("#sPoll", v => `${v} mp`); bind("#sGap", v => `${pct(v)} mp`);
+  $("#sRatesBtn").onclick = async () => {
+    const b = $("#sRatesBtn"); b.disabled = true; b.textContent = "Frissítés…";
+    const r = await api.refresh_rates(); if (r && r.rates) { r.deals = S.deals; r.feed = S.feed; r.watch = S.watch; S = r; }
+    $("#sRates").innerHTML = ratesHtml(); b.disabled = false; b.textContent = "Frissítés most";
+    toast(S.rates_info?.live && !S.rates_info.error_time ? "Árfolyam frissítve" : "Nem sikerült, a korábbi árfolyammal számolok");
+  };
   $("#sTest").onclick = async () => { await api.test_notification(); toast("Próba értesítés elküldve"); };
   $("#sClear").onclick = async () => { if (confirm("Biztosan üríted az akciólistát? Ez nem vonható vissza.")) { await api.clear_deals(); closePanel(); toast("Akciólista ürítve"); lastSig = ""; tick(); } };
   s.querySelectorAll("[data-unblock]").forEach(b => b.onclick = () => { c.blocked_sellers = blocked.filter(x => x !== b.dataset.unblock); b.closest(".row").remove(); });
   $("#sSave").onclick = async () => {
     c.deal_threshold = +$("#sThr").value; c.poll_interval_sec = +$("#sPoll").value; c.request_gap_sec = +$("#sGap").value;
-    c.app = { ...a, windows_notify: $("#sWin").checked, sound: $("#sSound").checked, notify_mode: $("#sMode").value, min_condition: +$("#sCond").value };
+    c.app = { ...a, windows_notify: $("#sWin").checked, sound: $("#sSound").checked, translate_titles: $("#sTr").checked, notify_mode: $("#sMode").value, min_condition: +$("#sCond").value };
     delete c.app.only_great;
     await api.save_config(c); closePanel(); toast("Beállítások mentve");
   };

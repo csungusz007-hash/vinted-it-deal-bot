@@ -76,6 +76,7 @@ class VintedClient:
         self.country = country
         self.host = DOMAINS[country]
         self.cookie_time = 0
+        self.on_wait = None  # opcionális visszahívás(mp, ok): az app így látja a 429/403 várakozást
         self._new_session()
 
     def _headers(self, html=False):
@@ -100,42 +101,84 @@ class VintedClient:
         """A katalógus-oldalt tölti le (ugyanazt, amit a böngésző), és kiolvassa
         belőle a beágyazott hirdetésadatokat. A régi /api/v2/catalog/items
         végpont 2026 őszén megszűnt (404)."""
+        params = {"search_text": text, "order": "newest_first"}
+        html = self._get(f"https://{self.host}/catalog?" + urllib.parse.urlencode(params))
+        return extract_items(html) if html else []
+
+    def _get(self, url):
+        """HTML letöltése 401/403/429 esetén várakozással és újrapróbálással."""
         if time.time() - self.cookie_time > self.SESSION_MAX_AGE:
             self._new_session()
-        params = {"search_text": text, "order": "newest_first"}
-        url = f"https://{self.host}/catalog?" + urllib.parse.urlencode(params)
         for attempt in range(4):
             try:
                 req = urllib.request.Request(url, headers=self._headers(html=True))
                 with self.opener.open(req, timeout=25) as r:
-                    html = r.read().decode("utf-8", "replace")
-                return extract_items(html)
+                    return r.read().decode("utf-8", "replace")
             except urllib.error.HTTPError as e:
                 if e.code in (401, 403):
-                    time.sleep(2 + attempt * 3)
-                    self._new_session()
-                    continue
-                if e.code == 429:
+                    wait = 2 + attempt * 3
+                elif e.code == 429:
                     wait = 30 * (attempt + 1)
                     log(f"{C['y']}[{self.country.upper()}] Túl sok kérés (429) – várok {wait} mp-et…{C['x']}")
-                    time.sleep(wait)
-                    continue
-                raise
-        return []
+                else:
+                    raise
+                if self.on_wait:
+                    self.on_wait(wait, e.code)
+                time.sleep(wait)
+                if e.code != 429:
+                    self._new_session()
+        return None
+
+    def item_status(self, url):
+        """Egy hirdetés aktuális állapota: eltűnt / eladva / foglalt / jelenlegi ár."""
+        try:
+            html = self._get(url)
+        except urllib.error.HTTPError as e:
+            if e.code in (404, 410):
+                return {"gone": True}
+            raise
+        if html is None:
+            return None
+        flag = lambda k: re.search(k + r'\\":true', html) is not None
+        m = re.search(r'\\"price\\":\{\\"amount\\":\\"([\d.]+)\\"', html)
+        return {"gone": False, "closed": flag("is_closed"), "reserved": flag("is_reserved"),
+                "price": float(m.group(1)) if m else None}
 
 
 # ---------------------------------------------------------------- Adatfeldolgozás
 _NEXTF_RE = re.compile(r'self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)')
 
 
-def extract_items(html):
-    """Kiszedi a katalógus-oldalba ágyazott (Next.js) hirdetés-objektumokat."""
-    parts = []
-    for m in _NEXTF_RE.finditer(html):
+_PUSH = "self.__next_f.push([1,"
+
+
+def _item_chunks(html):
+    """Csak a hirdetéseket tartalmazó <script> darabokat dekódolja (3,6 MB-os oldalon
+    ~30x gyorsabb, mint az egész oldalt regexszel végignézni)."""
+    parts, pos = [], 0
+    while True:
+        i = html.find("productItem", pos)
+        if i < 0:
+            return parts
+        s, e = html.rfind(_PUSH, 0, i), html.find("])</script>", i)
+        if s < 0 or e < 0:
+            return parts
         try:
-            parts.append(json.loads(m.group(1)))
+            parts.append(json.loads(html[s + len(_PUSH):e]))
         except ValueError:
             pass
+        pos = e
+
+
+def extract_items(html):
+    """Kiszedi a katalógus-oldalba ágyazott (Next.js) hirdetés-objektumokat."""
+    parts = _item_chunks(html)
+    if not parts:  # tartalék: ha a Vinted átrendezi a script-tageket
+        for m in _NEXTF_RE.finditer(html):
+            try:
+                parts.append(json.loads(m.group(1)))
+            except ValueError:
+                pass
     text = "".join(parts)
     dec = json.JSONDecoder()
     key = '"productItem":'
@@ -370,13 +413,18 @@ def load_rates(cfg):
                 d = json.loads(r.read().decode())
             for cur, per_huf in d["rates"].items():
                 rates[cur] = 1 / float(per_huf)
+            RATES_INFO.update(live=True, date=d.get("date"), time=time.time())
             log(f"{C['d']}Friss ECB árfolyam: 1 PLN ≈ {rates['PLN']:.1f} Ft, "
                 f"1 RON ≈ {rates['RON']:.1f} Ft{C['x']}")
             return rates
         except Exception:
             continue
+    RATES_INFO.update(live=False, time=time.time())
     log(f"{C['y']}Nem sikerült friss árfolyamot lekérni, a config.json-ban lévőt használom.{C['x']}")
     return rates
+
+
+RATES_INFO = {"live": False, "date": None, "time": None}  # az utolsó load_rates eredménye
 
 
 # ---------------------------------------------------------------- Fő ciklus
