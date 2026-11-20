@@ -1,0 +1,41 @@
+name: Windows .exe build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: PyInstaller telepítése
+        run: pip install pyinstaller
+
+      - name: .exe fordítása
+        run: pyinstaller --onefile --console --name VintedBot vinted_bot.py
+
+      - name: ZIP összeállítása
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force VintedBot | Out-Null
+          Copy-Item dist/VintedBot.exe, config.json, README.md VintedBot/
+          Compress-Archive -Path VintedBot/* -DestinationPath VintedBot-windows.zip -Force
+
+      - name: Feltöltés a "latest" kiadásba
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>$null
+          $global:LASTEXITCODE = 0
+          gh release create latest VintedBot-windows.zip --title "VintedBot (Windows)" --notes "Csomagold ki, és indítsd el a VintedBot.exe-t. Python nem kell hozzá. Build: ${{ github.sha }}"
