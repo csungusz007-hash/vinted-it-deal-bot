@@ -1,0 +1,101 @@
+{
+  "countries": ["hu", "pl", "ro"],
+
+  "poll_interval_sec": 5,
+  "request_gap_sec": 1.5,
+
+  "deal_threshold": 0.65,
+  "min_history": 15,
+  "alert_on_start": false,
+  "verbose": false,
+
+  "to_huf": { "HUF": 1, "PLN": 92, "RON": 78, "EUR": 390 },
+
+  "notify": {
+    "telegram_bot_token": "",
+    "telegram_chat_id": "",
+    "discord_webhook": ""
+  },
+
+  "exclude_words": [
+    "hibás", "törött", "alkatrész", "csak doboz", "nem működik", "icloud zár", "kártyafüggő",
+    "uszkodz", "zepsut", "na części", "tylko pudełko", "nie działa", "blokada icloud",
+    "defect", "defekt", "stricat", "pentru piese", "doar cutia", "nu funcționează", "blocat icloud",
+    "broken", "for parts", "icloud lock", "box only"
+  ],
+
+  "searches": [
+    {
+      "name": "RAM DDR4",
+      "queries": { "hu": ["ddr4 ram"], "pl": ["ram ddr4"], "ro": ["memorie ddr4", "ram ddr4"] },
+      "must_contain": ["ddr4"],
+      "min_price_huf": 2500, "max_price_huf": 40000
+    },
+    {
+      "name": "RAM DDR5",
+      "queries": { "hu": ["ddr5 ram"], "pl": ["ram ddr5"], "ro": ["memorie ddr5", "ram ddr5"] },
+      "must_contain": ["ddr5"],
+      "min_price_huf": 8000, "max_price_huf": 80000
+    },
+    {
+      "name": "RTX 3060",
+      "queries": { "all": ["rtx 3060"] },
+      "must_contain": ["3060"],
+      "min_price_huf": 30000, "max_price_huf": 110000
+    },
+    {
+      "name": "RTX 3070 / 3080",
+      "queries": { "all": ["rtx 3070", "rtx 3080"] },
+      "must_contain": ["3070", "3080"],
+      "min_price_huf": 50000, "max_price_huf": 200000
+    },
+    {
+      "name": "RTX 40xx",
+      "queries": { "all": ["rtx 4060", "rtx 4070"] },
+      "must_contain": ["4060", "4070"],
+      "min_price_huf": 60000, "max_price_huf": 260000
+    },
+    {
+      "name": "Videókártya (általános)",
+      "queries": { "hu": ["videókártya"], "pl": ["karta graficzna"], "ro": ["placa video"] },
+      "min_price_huf": 8000,
+      "deal_threshold": 0.5
+    },
+    {
+      "name": "SSD NVMe",
+      "queries": { "hu": ["nvme ssd"], "pl": ["dysk ssd nvme"], "ro": ["ssd nvme"] },
+      "must_contain": ["nvme", "m.2", "m2"],
+      "min_price_huf": 4000, "max_price_huf": 50000
+    },
+    {
+      "name": "iPhone 13 / 14",
+      "queries": { "all": ["iphone 13", "iphone 14"] },
+      "must_contain": ["iphone 13", "iphone 14"],
+      "min_price_huf": 70000, "max_price_huf": 220000
+    },
+    {
+      "name": "iPhone 15",
+      "queries": { "all": ["iphone 15"] },
+      "must_contain": ["iphone 15"],
+      "min_price_huf": 120000, "max_price_huf": 330000
+    },
+    {
+      "name": "Samsung Galaxy S23 / S24",
+      "queries": { "all": ["galaxy s23", "galaxy s24"] },
+      "must_contain": ["s23", "s24"],
+      "min_price_huf": 60000, "max_price_huf": 260000
+    },
+    {
+      "name": "AirPods Pro",
+      "queries": { "all": ["airpods pro"] },
+      "must_contain": ["airpods pro"],
+      "min_price_huf": 15000, "max_price_huf": 70000
+    },
+    {
+      "name": "Sony WH-1000XM",
+      "queries": { "all": ["wh-1000xm4", "wh-1000xm5", "sony xm5"] },
+      "must_contain": ["xm4", "xm5"],
+      "min_price_huf": 25000, "max_price_huf": 110000
+    }
+  ]
+}
