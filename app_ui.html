@@ -319,8 +319,9 @@ const Demo = (() => {
 let api = null;
 function androidApi() {
   const A = window.AndroidApi;
-  return new Proxy({}, { get: (_, name) => async (...args) => {
-    const r = A.call(String(name), JSON.stringify(args));
+  // A "then" kulcsot ki kell hagyni, különben a Promise "thenable"-nek nézi, és sosem teljesül.
+  return new Proxy({}, { get: (_, name) => name === "then" || typeof name !== "string" ? undefined : async (...args) => {
+    const r = A.call(name, JSON.stringify(args));
     return r ? JSON.parse(r) : null;
   } });
 }
