@@ -29,7 +29,10 @@ import urllib.request
 from collections import deque
 from datetime import datetime
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, "frozen", False):  # .exe-ként fut (PyInstaller)
+    BASE = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    BASE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE, "config.json")
 STATE_PATH = os.path.join(BASE, "state.json")
 LOG_PATH = os.path.join(BASE, "talalatok.csv")
@@ -387,7 +390,11 @@ def country_worker(country, cfg, state, rates, stop):
 
 def main():
     if not os.path.exists(CONFIG_PATH):
-        sys.exit("Nincs config.json a script mellett.")
+        print(f"Nincs config.json ebben a mappában: {BASE}")
+        print("Tedd a config.json-t a program mellé, és indítsd újra.")
+        if getattr(sys, "frozen", False):
+            input("Nyomj Entert a bezáráshoz…")
+        sys.exit(1)
     with open(CONFIG_PATH, encoding="utf-8") as f:
         cfg = json.load(f)
 
@@ -415,4 +422,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"Váratlan hiba: {e}")
+        if getattr(sys, "frozen", False):
+            input("Nyomj Entert a bezáráshoz…")
+        raise

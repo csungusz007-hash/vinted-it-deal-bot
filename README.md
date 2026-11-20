@@ -1,6 +1,13 @@
 # Vinted IT-akció figyelő (HU / PL / RO)
 
-## Telepítés
+## Telepítés Python nélkül (Windows)
+1. A repó oldalán jobb oldalt kattints a **Releases → VintedBot (Windows)** kiadásra, és töltsd le a `VintedBot-windows.zip`-et.
+2. Csomagold ki egy mappába (benne lesz a `VintedBot.exe`, a `config.json` és ez a leírás).
+3. Dupla katt a `VintedBot.exe`-re. Ha a Windows kék ablakkal figyelmeztet („A Windows megvédte a számítógépet”), kattints a **További információ → Futtatás mindenképp** gombra (a program nincs digitálisan aláírva).
+
+A `config.json`-t Jegyzettömbbel szerkesztheted, mindig az `.exe` mellett kell lennie.
+
+## Telepítés Pythonnal (bármilyen rendszer)
 1. Telepítsd a Python 3.8 vagy újabb verzióját: https://www.python.org/downloads/ (Windowson pipáld be az „Add Python to PATH” opciót).
 2. Tedd egy mappába ezt a három fájlt: `vinted_bot.py`, `config.json`, `start.bat`.
 3. Indítás: Windowson dupla katt a `start.bat`-ra, máshol `python3 vinted_bot.py`. Leállítás: Ctrl+C.
