@@ -489,7 +489,7 @@ class Engine:
             warn_words = [w.lower() for w in self.cfg.get("warn_words", [])]
             min_hist = int(self.cfg.get("min_history", 15))
             thr = float(search.get("deal_threshold", self.cfg.get("deal_threshold", 0.65)))
-            min_cond = int(self.cfg.get("app", {}).get("min_condition", 3))
+            min_cond = int(search.get("min_condition", self.cfg.get("app", {}).get("min_condition", 3)))  # keresésenként felülírható
             mode = self.cfg.get("app", {}).get("notify_mode", "best")
             allowed = {c.upper() for c in self.cfg.get("allowed_seller_countries", ["HU", "PL", "RO"])}
             if len(self.last_total) > 100000:

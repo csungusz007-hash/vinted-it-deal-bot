@@ -17,7 +17,7 @@ Python nem kell hozzá. A felületet a Windowsba épített Edge WebView2 rajzolj
 A telefonos app ugyanazt tudja, mint a Windows-os: a figyelés a háttérben fut (az értesítési sávban „Figyelés fut” jelzi), új akciónál értesítést kapsz, koppintásra megnyílik a hirdetés. A vissza gomb csak háttérbe teszi az appot, a figyelést a „Figyelés szüneteltetése” gomb állítja le.
 
 ## Akció-csomagok (célárak)
-Az alapbeállításban 27 kész keresés van, mindegyiknek célára: ha egy hirdetés a Vinted-díjjal együtt ennél olcsóbb és legalább „Jó” állapotú, akció. Például:
+Az alapbeállításban 30 kész keresés van, mindegyiknek célára: ha egy hirdetés a Vinted-díjjal együtt ennél olcsóbb és legalább „Jó” állapotú, akció. Például:
 
 | Csomag | Célár |
 |---|---|
@@ -32,8 +32,11 @@ Az alapbeállításban 27 kész keresés van, mindegyiknek célára: ha egy hird
 | AirPods Pro 2 / AirPods 3–4 | 32 000 / 20 000 Ft |
 | Sony WH-1000XM5 / XM4 | 42 000 / 30 000 Ft |
 | Logitech G502, Ryzen 5 5600 / 7600, 27" 144Hz monitor | 9 000 / 32 000 / 45 000 / 35 000 Ft |
+| Bármilyen iPhone, legalább „Nagyon jó” állapotban | 30 000 Ft |
+| 16GB RAM (DDR4 vagy DDR5, 1×16 vagy 2×8) | 30 000 Ft |
+| Samsung Galaxy Watch 4-től felfelé (5, 6, 7, 8, FE, Ultra), legalább „Nagyon jó” | 25 000 Ft |
 
-A célárak 2026 novemberi magyar használt árakból indulnak (kb. 25–40%-kal a szokásos ár alatt). Az RTX 4070 100 000 Ft-os célára ennél szigorúbb (a tipikus használt ár 185–215 ezer Ft), ott ritkán lesz találat. Minden célár átírható a keresés szerkesztőjében, és saját keresést is felvehetsz.
+A célárak 2026 novemberi magyar használt árakból indulnak (kb. 25–40%-kal a szokásos ár alatt). Az RTX 4070 100 000 Ft-os célára ennél szigorúbb (a tipikus használt ár 185–215 ezer Ft), ott ritkán lesz találat. A keresésekben `min_condition` is megadható (4 = legalább „Nagyon jó”, 5 = új); ez felülírja az általános állapot-beállítást. Minden célár átírható a keresés szerkesztőjében, és saját keresést is felvehetsz.
 
 Az első kör a már fent lévő hirdetések közül is kigyűjti a célár alattiakat a listába (értesítés nélkül). Utána csak az új hirdetésekről jön értesítés, keresésenként a legolcsóbbról.
 

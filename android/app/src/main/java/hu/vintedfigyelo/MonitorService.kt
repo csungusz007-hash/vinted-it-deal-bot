@@ -33,6 +33,7 @@ class MonitorService : Service() {
         }
         val ctx = applicationContext
         Engine.notifier = { rec -> Notifier.deal(ctx, rec) }
+        Engine.plainNotifier = { t, b, u -> Notifier.plain(ctx, t, b, u) }
         Engine.start()
         return START_STICKY
     }

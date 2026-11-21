@@ -542,6 +542,162 @@
         "165",
         "170"
       ]
+    },
+    {
+      "name": "iPhone, min. nagyon jó állapot, 30 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "iphone"
+        ]
+      },
+      "target_price_huf": 30000,
+      "min_price_huf": 12000,
+      "min_condition": 4,
+      "must_contain": [
+        "iphone"
+      ],
+      "exclude_words": [
+        "tok",
+        "etui",
+        "husa",
+        "husă",
+        "case",
+        "fólia",
+        "folia",
+        "szkło",
+        "sticla",
+        "kábel",
+        "kabel",
+        "cablu",
+        "töltő",
+        "ładowarka",
+        "incarcator",
+        "încărcător",
+        "charger",
+        "ipad",
+        "watch",
+        "airpods",
+        "macbook",
+        "doboz",
+        "pudełko",
+        "cutie",
+        "box"
+      ]
+    },
+    {
+      "name": "16GB RAM 30 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "hu": [
+          "16gb ram",
+          "16gb ddr4",
+          "16gb ddr5",
+          "2x8gb ram"
+        ],
+        "pl": [
+          "pamięć ram 16gb",
+          "ram ddr4 16gb",
+          "ram ddr5 16gb"
+        ],
+        "ro": [
+          "memorie ram 16gb",
+          "ram ddr4 16gb",
+          "ram ddr5 16gb"
+        ]
+      },
+      "target_price_huf": 30000,
+      "min_price_huf": 4000,
+      "must_contain": [
+        "16gb",
+        "16 gb",
+        "2x8",
+        "2 x 8"
+      ],
+      "exclude_words": [
+        "laptop",
+        "notebook",
+        "telefon",
+        "phone",
+        "tablet",
+        "iphone",
+        "galaxy",
+        "xiaomi",
+        "redmi",
+        "ssd",
+        "pendrive",
+        "microsd",
+        "sd card",
+        "karta pamięci",
+        "card memorie",
+        "macbook",
+        "konsola",
+        "konzol"
+      ]
+    },
+    {
+      "name": "Samsung Galaxy Watch 4+ (min. nagyon jó) 25 000 Ft alatt",
+      "enabled": true,
+      "queries": {
+        "all": [
+          "galaxy watch"
+        ]
+      },
+      "target_price_huf": 25000,
+      "min_price_huf": 8000,
+      "min_condition": 4,
+      "must_contain": [
+        "watch4",
+        "watch 4",
+        "watch5",
+        "watch 5",
+        "watch6",
+        "watch 6",
+        "watch7",
+        "watch 7",
+        "watch8",
+        "watch 8",
+        "watch ultra",
+        "watch fe"
+      ],
+      "exclude_words": [
+        "tok",
+        "etui",
+        "husa",
+        "husă",
+        "case",
+        "fólia",
+        "folia",
+        "szkło",
+        "sticla",
+        "kábel",
+        "kabel",
+        "cablu",
+        "töltő",
+        "ładowarka",
+        "incarcator",
+        "încărcător",
+        "charger",
+        "watch 3",
+        "watch3",
+        "active",
+        "gear",
+        "szíj",
+        "pasek",
+        "curea",
+        "strap",
+        "bransoletka",
+        "watch 40mm",
+        "watch 41mm",
+        "watch 42mm",
+        "watch 44mm",
+        "watch 45mm",
+        "watch 46mm",
+        "watch 40 mm",
+        "watch 42 mm",
+        "watch 44 mm",
+        "watch 46 mm"
+      ]
     }
   ]
 }

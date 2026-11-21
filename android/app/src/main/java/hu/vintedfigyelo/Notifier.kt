@@ -48,11 +48,26 @@ object Notifier {
         val n = Notification.Builder(c, CH_DEALS)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle(title)
-            .setContentText(rec.optString("title"))
+            .setContentText(rec.optString("title_hu").ifEmpty { rec.optString("title") })
             .setStyle(Notification.BigTextStyle().bigText(body))
             .setContentIntent(view)
             .setAutoCancel(true)
             .setCategory(Notification.CATEGORY_RECOMMENDATION)
+            .build()
+        try { c.getSystemService(NotificationManager::class.java).notify(id, n) } catch (_: SecurityException) { }
+    }
+
+    /** Egyszerű értesítés a mentett hirdetésekről (eladva, eltűnt, árcsökkenés); koppintásra megnyitja. */
+    fun plain(c: Context, title: String, body: String, url: String) {
+        val id = (url + title).hashCode()
+        val view = PendingIntent.getActivity(c, id, Intent(Intent.ACTION_VIEW, Uri.parse(url)),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val n = Notification.Builder(c, CH_DEALS)
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setContentIntent(view)
+            .setAutoCancel(true)
             .build()
         try { c.getSystemService(NotificationManager::class.java).notify(id, n) } catch (_: SecurityException) { }
     }

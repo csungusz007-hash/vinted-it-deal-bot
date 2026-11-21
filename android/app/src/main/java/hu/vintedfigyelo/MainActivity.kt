@@ -81,7 +81,12 @@ class MainActivity : Activity() {
             val args = try { JSONArray(argsJson) } catch (_: Exception) { JSONArray() }
             return try {
                 when (name) {
-                    "snapshot" -> Engine.snapshot()
+                    "snapshot" -> Engine.snapshot(if (args.length() > 0 && !args.isNull(0)) args.optInt(0, -1) else null)
+                    "refresh_rates" -> { Engine.refreshRates(); Engine.snapshot(Engine.currentSeq()) }
+                    "price_history" -> Engine.priceHistory(args.optString(0))
+                    "watch_add" -> Engine.watchAdd(args.optString(0)).toString()
+                    "watch_remove" -> Engine.watchRemove(args.optString(0)).toString()
+                    "watch_check" -> { Thread { Engine.checkWatch() }.start(); "true" }
                     "start" -> { runOnUiThread { MonitorService.start(this@MainActivity) }; "true" }
                     "stop" -> { Engine.stop(); runOnUiThread { MonitorService.stop(this@MainActivity) }; "true" }
                     "get_config" -> Engine.configJson()
