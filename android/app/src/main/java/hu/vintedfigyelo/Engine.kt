@@ -69,9 +69,10 @@ object Engine {
             if (initialized) return
             dir = ctx.filesDir
             val cfgFile = File(dir, "config.json")
-            cfg = if (cfgFile.exists()) JSONObject(cfgFile.readText())
-            else JSONObject(ctx.assets.open("config.json").bufferedReader().use { it.readText() })
+            val bundled = JSONObject(ctx.assets.open("config.json").bufferedReader().use { it.readText() })
+            cfg = if (cfgFile.exists()) JSONObject(cfgFile.readText()) else bundled
             applyDefaults()
+            if (mergePresets(bundled)) try { writeAtomic("config.json", cfg.toString(2)) } catch (_: Exception) { }
             rates.clear(); rates["HUF"] = 1.0
             cfg.optJSONObject("to_huf")?.let { o -> o.keys().forEach { rates[it.uppercase()] = o.getDouble(it) } }
             loadState()
@@ -81,6 +82,44 @@ object Engine {
             DOMAINS.keys.forEach { status[it] = JSONObject().put("state", "stopped").put("msg", "") }
             initialized = true
         }
+    }
+
+    /** Frissítés után az új beépített akció-csomagok bekerülnek a saját beállítások mellé.
+     *  Amit a felhasználó egyszer már látott és kitörölt, azt nem rakja vissza (known_presets). */
+    private fun mergePresets(bundled: JSONObject): Boolean {
+        val mine = cfg.optJSONArray("searches") ?: JSONArray().also { cfg.put("searches", it) }
+        val have = (0 until mine.length()).map { mine.getJSONObject(it).optString("name") }.toHashSet()
+        val known = cfg.optJSONArray("known_presets")?.let { a -> (0 until a.length()).map { a.getString(it) }.toHashSet() }
+        val presets = bundled.optJSONArray("searches") ?: JSONArray()
+        val names = JSONArray()
+        var changed = false
+        for (i in 0 until presets.length()) {
+            val p = presets.getJSONObject(i)
+            val name = p.optString("name")
+            names.put(name)
+            if (name !in have && (known == null || name !in known)) {
+                if (!p.has("enabled")) p.put("enabled", true)
+                mine.put(p); changed = true
+            }
+        }
+        if (known == null || known.size != names.length() || changed) { cfg.put("known_presets", names); changed = true }
+        return changed
+    }
+
+    fun notifyEnabled(): Boolean = synchronized(lock) { cfg.optJSONObject("app")?.optBoolean("windows_notify", true) ?: true }
+    fun soundEnabled(): Boolean = synchronized(lock) { cfg.optJSONObject("app")?.optBoolean("sound", true) ?: true }
+
+    /** Egy sor az állandó értesítéshez, pl. „HU, PL, RO rendben · 12 akció · 1 834 keresés”. */
+    fun statusLine(): String = synchronized(lock) {
+        if (!running) return@synchronized "Leállítva"
+        val ok = status.filter { it.value.optString("state") == "ok" }.keys.map { it.uppercase() }
+        val bad = status.filter { it.value.optString("state") in setOf("error", "wait") }.keys.map { it.uppercase() }
+        val parts = ArrayList<String>()
+        parts.add(if (ok.isEmpty()) "Kapcsolódás…" else ok.joinToString(", ") + " rendben")
+        if (bad.isNotEmpty()) parts.add(bad.joinToString(", ") + " vár")
+        parts.add("${deals.size} akció")
+        parts.add(fmt(checked.toDouble()) + " keresés")
+        parts.joinToString(" · ")
     }
 
     private fun applyDefaults() {

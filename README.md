@@ -14,7 +14,14 @@ Python nem kell hozzá. A felületet a Windowsba épített Edge WebView2 rajzolj
 2. Nyisd meg a letöltött fájlt. Ha a telefon kéri, engedélyezd a böngészőnek az „ismeretlen forrásból” való telepítést.
 3. Első indításkor engedélyezd az értesítéseket, és azt is, hogy az akkumulátor-optimalizálás ne állítsa le az appot. Enélkül az Android a háttérben leállíthatja a figyelést.
 
-A telefonos app ugyanazt tudja, mint a Windows-os: a figyelés a háttérben fut (az értesítési sávban „Figyelés fut” jelzi), új akciónál értesítést kapsz, koppintásra megnyílik a hirdetés. A vissza gomb csak háttérbe teszi az appot, a figyelést a „Figyelés szüneteltetése” gomb állítja le.
+A telefonos app ugyanazt tudja, mint a Windows-os (mentett hirdetések, árcsökkenés, élő árfolyam, magyar címek, ártörténet), és még:
+- **Értesítés fotóval és gombokkal**: „Megnyitás”, „Mentés” (a figyelőlistára kerül) és „Elrejtés”, az app megnyitása nélkül. Több akció egy csoportba kerül.
+- **Élő állapot**: az állandó „Figyelés fut” értesítés félpercenként mutatja, melyik ország rendben, hány akció van és hány keresés futott. Innen le is állíthatod.
+- **Újraindítás után folytatja**: ha a telefon újraindul vagy frissül az app, a figyelés magától újraindul (ha nem te állítottad le).
+- **Hang**: a beállításokban kikapcsolhatod az értesítést vagy csak a hangját.
+- **Új akció-csomagok frissítéskor**: a beépített új keresések maguktól bekerülnek a sajátjaid mellé, a módosításaid megmaradnak.
+
+A vissza gomb csak háttérbe teszi az appot, a figyelést a „Figyelés szüneteltetése” gomb állítja le.
 
 ## Akció-csomagok (célárak)
 Az alapbeállításban 30 kész keresés van, mindegyiknek célára: ha egy hirdetés a Vinted-díjjal együtt ennél olcsóbb és legalább „Jó” állapotú, akció. Például:
