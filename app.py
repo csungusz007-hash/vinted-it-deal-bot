@@ -752,13 +752,31 @@ def selftest():
     items = core.extract_items(html)
     assert len(items) == 1 and core.normalize(items[0], "hu")["seller"] == "7"
     import webview  # noqa: F401  (a csomagban benne kell lennie)
+    if os.name == "nt":
+        import clr  # noqa: F401  (a pywebview Windows-ablaka erre épül)
     print("selftest OK")
+
+
+def _unblock_bundle():
+    """A letöltött ZIP-ből kicsomagolt fájlokat a Windows „internetről jött”-nek jelöli
+    (Zone.Identifier), és a .NET ezért nem tölti be a Python.Runtime.dll-t: az ablak el sem indul
+    („Failed to resolve Python.Runtime.Loader.Initialize”). Indításkor levesszük a jelölést."""
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return
+    root = os.path.dirname(os.path.abspath(sys.executable))
+    for d, _, files in os.walk(root):
+        for f in files:
+            try:
+                os.remove(os.path.join(d, f) + ":Zone.Identifier")
+            except OSError:
+                pass
 
 
 def main():
     if "--selftest" in sys.argv:
         selftest()
         return
+    _unblock_bundle()
     import webview
     if not os.path.exists(core.CONFIG_PATH):
         webview.create_window(APP_NAME, html=(
