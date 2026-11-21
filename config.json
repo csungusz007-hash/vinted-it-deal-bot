@@ -4,6 +4,11 @@
     "pl",
     "ro"
   ],
+  "allowed_seller_countries": [
+    "HU",
+    "PL",
+    "RO"
+  ],
   "poll_interval_sec": 3,
   "request_gap_sec": 1.5,
   "deal_threshold": 0.65,

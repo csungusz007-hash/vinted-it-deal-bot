@@ -192,6 +192,7 @@ class Engine:
         with open(core.CONFIG_PATH, encoding="utf-8") as f:
             cfg = json.load(f)
         cfg.setdefault("blocked_sellers", [])
+        cfg.setdefault("allowed_seller_countries", ["HU", "PL", "RO"])
         cfg.setdefault("warn_words", DEFAULT_WARN_WORDS)
         app_cfg = cfg.setdefault("app", {})
         app_cfg.setdefault("windows_notify", True)
@@ -215,7 +216,8 @@ class Engine:
     def _load_deals(self):
         try:
             with open(DEALS_PATH, encoding="utf-8") as f:
-                deals = json.load(f)[:MAX_DEALS]
+                # Csak az ellenőrzött országú eladók akciói maradnak (a régiek között külföldi is lehetett).
+                deals = [d for d in json.load(f) if d.get("seller_country")][:MAX_DEALS]
             for d in deals:
                 d["status"] = status_hu(d.get("status"))
             return deals
@@ -296,6 +298,7 @@ class Engine:
                     if st.get("state") == "wait":
                         st.update(state="ok", msg="")
                     empty += 0 if items else 1
+                    self._prefetch_countries(country, search, q, items, client)
                     self._process(country, search, q, items)
                     self.stats["checked"] += 1
                     st["items"] = st.get("items", 0) + len(items)
@@ -438,6 +441,42 @@ class Engine:
                 self._save_deals()
                 self._save_watch()
 
+    def _prefetch_countries(self, country, search, q, items, client):
+        """A szóba jöhető új hirdetések eladóinak országát lekéri a profiloldalukról.
+        Zárolás nélkül fut (hogy a felület ne akadjon meg), és megjegyzi az eladókat."""
+        if client is None or not hasattr(client, "seller_country"):
+            return
+        key = f"{country}|{search['name']}|{q}"
+        with self.lock:
+            seen_set = set(self.state.seen.get(key, ()))
+            seeded = key in self.state.seen
+        target = search.get("target_price_huf")
+        mx = search.get("max_price_huf")
+        todo = []
+        for raw in items:
+            it = core.normalize(raw, country)
+            seller = it["seller"]
+            if not seller or seller in self.state.sellers or seller in todo:
+                continue
+            price, total = self._landed_huf(it)
+            if price is None or not core.text_ok(it["title"], search, self.cfg):
+                continue
+            if price < search.get("min_price_huf", 0) or (mx and price > mx):
+                continue
+            if it["id"] in seen_set:
+                old = self.last_total.get(it["id"])
+                if not (seeded and old and total and total <= old * 0.95):
+                    continue
+            elif not seeded and not (target and total <= target):
+                continue
+            todo.append(seller)
+        for seller in todo:
+            cc = client.seller_country(seller)
+            if cc:
+                with self.state.lock:
+                    self.state.sellers[seller] = cc
+            time.sleep(0.4)
+
     def _process(self, country, search, q, items):
         key = f"{country}|{search['name']}|{q}"
         notify = []
@@ -452,6 +491,7 @@ class Engine:
             thr = float(search.get("deal_threshold", self.cfg.get("deal_threshold", 0.65)))
             min_cond = int(self.cfg.get("app", {}).get("min_condition", 3))
             mode = self.cfg.get("app", {}).get("notify_mode", "best")
+            allowed = {c.upper() for c in self.cfg.get("allowed_seller_countries", ["HU", "PL", "RO"])}
             if len(self.last_total) > 100000:
                 self.last_total.clear()  # shortcut: csak memóriában, újraindítás után újratanulja; fájlba, ha kevés lenne
             for raw in reversed(items):
@@ -478,6 +518,12 @@ class Engine:
                 rec = self._score(it, search, hist, min_hist, warn_words, add_hist=not drop_from)
                 if rec is None:
                     continue
+                # Csak a megadott országok (alapból HU, PL, RO) eladóitól jöhet hirdetés.
+                cc = self.state.sellers.get(it["seller"])
+                if cc not in allowed:
+                    self.stats["foreign_skipped"] = self.stats.get("foreign_skipped", 0) + 1
+                    continue
+                rec["seller_country"] = cc
                 if drop_from:
                     rec["drop_from"] = round(drop_from)
                     rec["warnings"].insert(0, f"Árcsökkenés: {core.fmt_num(drop_from)} Ft → {core.fmt_num(rec['total_huf'])} Ft")

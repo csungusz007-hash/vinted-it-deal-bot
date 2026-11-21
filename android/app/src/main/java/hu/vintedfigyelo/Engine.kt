@@ -37,6 +37,7 @@ object Engine {
     private val seen = HashMap<String, ArrayDeque<String>>()
     private val hist = HashMap<String, ArrayDeque<Double>>()
     private val alerted = LinkedHashSet<String>()
+    private val sellers = HashMap<String, String>()  // eladó-azonosító -> országkód
     private val deals = ArrayList<JSONObject>()
     private val feed = ArrayDeque<JSONObject>()
     private val status = LinkedHashMap<String, JSONObject>()
@@ -46,6 +47,7 @@ object Engine {
     private var seq = 0
     private var checked = 0
     private var newItems = 0
+    private var foreignSkipped = 0
     private var started = 0.0
     var notifier: ((JSONObject) -> Unit)? = null
 
@@ -71,6 +73,7 @@ object Engine {
 
     private fun applyDefaults() {
         if (!cfg.has("blocked_sellers")) cfg.put("blocked_sellers", JSONArray())
+        if (!cfg.has("allowed_seller_countries")) cfg.put("allowed_seller_countries", JSONArray(listOf("HU", "PL", "RO")))
         if (!cfg.has("warn_words")) cfg.put("warn_words", JSONArray(DEFAULT_WARN))
         val app = cfg.optJSONObject("app") ?: JSONObject().also { cfg.put("app", it) }
         if (!app.has("windows_notify")) app.put("windows_notify", true)
@@ -107,6 +110,7 @@ object Engine {
             d.optJSONObject("hist")?.let { o -> o.keys().forEach { k ->
                 val a = o.getJSONArray(k); hist[k] = ArrayDeque<Double>().also { q -> for (i in 0 until a.length()) q.add(a.getDouble(i)) } } }
             d.optJSONArray("alerted")?.let { a -> for (i in 0 until a.length()) alerted.add(a.getString(i)) }
+            d.optJSONObject("sellers")?.let { o -> o.keys().forEach { k -> sellers[k] = o.getString(k) } }
         } catch (_: Exception) { }
     }
 
@@ -114,7 +118,8 @@ object Engine {
         val text = synchronized(lock) {
             val s = JSONObject(); seen.forEach { (k, v) -> s.put(k, JSONArray(v.toList())) }
             val h = JSONObject(); hist.forEach { (k, v) -> h.put(k, JSONArray(v.map { Math.round(it) })) }
-            JSONObject().put("seen", s).put("hist", h).put("alerted", JSONArray(alerted.toList())).toString()
+            val sl = JSONObject(); sellers.forEach { (k, v) -> sl.put(k, v) }
+            JSONObject().put("seen", s).put("hist", h).put("alerted", JSONArray(alerted.toList())).put("sellers", sl).toString()
         }
         try { writeAtomic("state.json", text) } catch (_: Exception) { }
     }
@@ -122,7 +127,10 @@ object Engine {
     private fun loadDeals() {
         val f = File(dir, "akciok.json")
         if (!f.exists()) return
-        try { val a = JSONArray(f.readText()); for (i in 0 until minOf(a.length(), MAX_DEALS)) deals.add(a.getJSONObject(i)) }
+        try {
+            val a = JSONArray(f.readText())
+            for (i in 0 until a.length()) { val d = a.getJSONObject(i); if (d.optString("seller_country").isNotEmpty() && deals.size < MAX_DEALS) deals.add(d) }
+        }
         catch (_: Exception) { }
     }
 
@@ -207,6 +215,15 @@ object Engine {
 
         fun newSession() { get("https://$host/"); cookieTime = System.currentTimeMillis() / 1000.0 }
 
+        /** Az eladó országkódja (pl. "HU") a profiloldaláról; null, ha nem derül ki. */
+        fun sellerCountry(userId: String): String? {
+            if (userId.isEmpty()) return null
+            return try {
+                val html = get("https://$host/member/" + URLEncoder.encode(userId, "UTF-8"))
+                Engine.COUNTRY_RE.find(html)?.groupValues?.get(1)?.uppercase()
+            } catch (_: Exception) { null }
+        }
+
         fun search(text: String, id: Int): List<JSONObject> {
             if (System.currentTimeMillis() / 1000.0 - cookieTime > 1800) newSession()
             val url = "https://$host/catalog?search_text=" + URLEncoder.encode(text, "UTF-8") + "&order=newest_first"
@@ -223,6 +240,8 @@ object Engine {
             return emptyList()
         }
     }
+
+    internal val COUNTRY_RE = Regex("""country_iso_code\\?":\\?"([A-Za-z]{2})""")
 
     /** A katalógus-oldalba ágyazott (Next.js) hirdetés-objektumok kiolvasása, regex nélkül. */
     fun extractItems(html: String): List<JSONObject> {
@@ -388,22 +407,19 @@ object Engine {
             .put("target_huf", if (target > 0) Math.round(target) else JSONObject.NULL)
     }
 
-    private fun process(country: String, s: JSONObject, q: String, items: List<JSONObject>) {
+    private fun process(country: String, s: JSONObject, q: String, items: List<JSONObject>, client: Client?, id: Int) {
         val key = "$country|${s.optString("name")}|$q"
-        val notify = ArrayList<JSONObject>()
+        val target = s.optDouble("target_price_huf", 0.0)
+        // 1. lépés (zárolva): új hirdetések kiértékelése
+        val cands = ArrayList<JSONObject>()
+        // Ezt a kulcsot (ország|keresés|szó) csak ennek az országnak a szála írja, így a két lépés között nem változhat.
+        val seeded = synchronized(lock) { seen.containsKey(key) }
         synchronized(lock) {
-            val seeded = seen.containsKey(key)
             val sq = seen.getOrPut(key) { ArrayDeque() }
             val sset = HashSet(sq)
             val h = hist.getOrPut(key) { ArrayDeque() }
-            val blocked = strList(cfg.optJSONArray("blocked_sellers")).toSet()
             val warn = strList(cfg.optJSONArray("warn_words"))
             val minHist = cfg.optInt("min_history", 15)
-            val thr = s.optDouble("deal_threshold", cfg.optDouble("deal_threshold", 0.65))
-            val app = cfg.optJSONObject("app") ?: JSONObject()
-            val minCond = app.optInt("min_condition", 3)
-            val mode = app.optString("notify_mode", "best")
-            val target = s.optDouble("target_price_huf", 0.0)
             for (raw in items.reversed()) {
                 val it = normalize(raw, country)
                 if (it.id.isEmpty() || it.id in sset) continue
@@ -417,12 +433,39 @@ object Engine {
                     continue
                 }
                 if (seeded) newItems++
-                val rec = score(it, s, h, minHist, warn) ?: continue
+                score(it, s, h, minHist, warn)?.let { rec -> cands.add(rec) }
+            }
+        }
+        if (cands.isEmpty()) return
+        // 2. lépés (zárolás nélkül): csak a megadott országok eladóitól jöhet hirdetés
+        val allowed = synchronized(lock) { strList(cfg.optJSONArray("allowed_seller_countries")).map { it.uppercase() }.toSet() }
+            .ifEmpty { setOf("HU", "PL", "RO") }
+        val kept = ArrayList<JSONObject>()
+        for (rec in cands) {
+            val seller = rec.optString("seller")
+            var cc = synchronized(lock) { sellers[seller] }
+            if (cc == null && client != null) {
+                cc = client.sellerCountry(seller)
+                if (cc != null) synchronized(lock) { sellers[seller] = cc }
+                sleep(0.4, id)
+            }
+            if (cc != null && cc in allowed) { rec.put("seller_country", cc); kept.add(rec) }
+            else synchronized(lock) { foreignSkipped++ }
+        }
+        // 3. lépés (zárolva): lista, akciók, értesítés
+        val notify = ArrayList<JSONObject>()
+        synchronized(lock) {
+            val blocked = strList(cfg.optJSONArray("blocked_sellers")).toSet()
+            val thr = s.optDouble("deal_threshold", cfg.optDouble("deal_threshold", 0.65))
+            val app = cfg.optJSONObject("app") ?: JSONObject()
+            val minCond = app.optInt("min_condition", 3)
+            val mode = app.optString("notify_mode", "best")
+            for (rec in kept) {
                 if (seeded) { feed.addFirst(rec); while (feed.size > MAX_FEED) feed.removeLast() }
                 val isDeal = if (target > 0) rec.getDouble("total_huf") <= target
                              else rec.opt("ratio").let { r -> r is Number && r.toDouble() <= thr }
-                if (!isDeal || it.seller.lowercase() in blocked || rec.getInt("cond_rank") < minCond) continue
-                if (!alerted.add(it.id)) continue
+                if (!isDeal || rec.optString("seller").lowercase() in blocked || rec.getInt("cond_rank") < minCond) continue
+                if (!alerted.add(rec.optString("id"))) continue
                 while (alerted.size > 20000) alerted.remove(alerted.first())
                 val best = bestTotal(s.optString("name"))
                 rec.put("best", best == null || rec.getDouble("total_huf") < best)
@@ -477,7 +520,7 @@ object Engine {
                     if (!alive(id)) return
                     val items = cl.search(job.second, id)
                     if (items.isEmpty()) empty++
-                    process(country, job.first, job.second, items)
+                    process(country, job.first, job.second, items, cl, id)
                     synchronized(lock) {
                         checked++
                         st.put("items", st.optInt("items", 0) + items.size)
@@ -525,7 +568,7 @@ object Engine {
             .put("running", running).put("status", st)
             .put("deals", JSONArray(deals)).put("feed", JSONArray(feed.toList()))
             .put("counts", counts).put("seq", seq).put("now", now())
-            .put("stats", JSONObject().put("checked", checked).put("new_items", newItems)
+            .put("stats", JSONObject().put("checked", checked).put("new_items", newItems).put("foreign_skipped", foreignSkipped)
                 .put("started", if (running) started else JSONObject.NULL))
             .toString()
     }

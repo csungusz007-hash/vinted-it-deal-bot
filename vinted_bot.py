@@ -105,6 +105,17 @@ class VintedClient:
         html = self._get(f"https://{self.host}/catalog?" + urllib.parse.urlencode(params))
         return extract_items(html) if html else []
 
+    def seller_country(self, user_id):
+        """Az eladó országkódja (pl. "HU") a profiloldaláról; None, ha nem derül ki."""
+        if not user_id:
+            return None
+        try:
+            html = self._get(f"https://{self.host}/member/{urllib.parse.quote(str(user_id))}")
+        except Exception:
+            return None
+        m = _COUNTRY_RE.search(html or "")
+        return m.group(1).upper() if m else None
+
     def _get(self, url):
         """HTML letöltése 401/403/429 esetén várakozással és újrapróbálással."""
         if time.time() - self.cookie_time > self.SESSION_MAX_AGE:
@@ -286,6 +297,10 @@ def evaluate(item, search, cfg, hist, rates):
 
 
 # ---------------------------------------------------------------- Állapot
+# Az eladó profiloldalán: "country_iso_code":"PL" (a beágyazott adatban idézőjelek elé \ kerülhet)
+_COUNTRY_RE = re.compile(r'country_iso_code\\?":\\?"([A-Za-z]{2})')
+
+
 class State:
     def __init__(self, path):
         self.path = path
@@ -294,6 +309,7 @@ class State:
         self.hist = {}
         self.alerted = deque(maxlen=20000)
         self._alerted_set = set()
+        self.sellers = {}  # eladó-azonosító -> országkód (gyorsítótár)
         if os.path.exists(path):
             try:
                 with open(path, encoding="utf-8") as f:
@@ -302,6 +318,7 @@ class State:
                 self.hist = {k: deque(v, maxlen=300) for k, v in d.get("hist", {}).items()}
                 for i in d.get("alerted", []):
                     self.mark_alerted(i)
+                self.sellers = dict(d.get("sellers", {}))
             except Exception as e:
                 log(f"{C['y']}state.json nem olvasható ({e}), tiszta lappal indulok.{C['x']}")
 
@@ -324,7 +341,8 @@ class State:
         with self.lock:
             d = {"seen": {k: list(v) for k, v in self.seen.items()},
                  "hist": {k: [round(x) for x in v] for k, v in self.hist.items()},
-                 "alerted": list(self.alerted)}
+                 "alerted": list(self.alerted),
+                 "sellers": dict(list(self.sellers.items())[-20000:])}
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(d, f)
